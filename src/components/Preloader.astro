@@ -1,0 +1,610 @@
+---
+// Retrofuturistic Gravity Falls-inspired preloader (WebGL + Spherical CRT)
+---
+
+<div class="preloader-shell" data-preloader>
+	
+	<div class="crt-display" data-crt>
+		
+		<div class="preloader-crt-glass"></div>
+
+		<div class="preloader-glass-frame">
+			<div class="preloader-header">
+				<span class="preloader-title">NEURAL LOAD</span>
+				<div class="preloader-controls">
+					<span class="preloader-btn"></span>
+					<span class="preloader-btn"></span>
+					<span class="preloader-btn preloader-btn--close"></span>
+				</div>
+			</div>
+			<div class="preloader-body">
+				
+				<div class="preloader-animation-container">
+					<canvas id="gl-heart-canvas" width="120" height="120" class="preloader-canvas"></canvas>
+
+					<div class="preloader-dots">
+						<span class="dot dot--1"></span>
+						<span class="dot dot--2"></span>
+						<span class="dot dot--3"></span>
+					</div>
+				</div>
+
+				<div class="preloader-bar-container">
+					<div class="preloader-bar-frame">
+						<div class="preloader-bar-fill" data-preloader-progress></div>
+					</div>
+					<div class="preloader-label">
+						<span class="preloader-text">NEURAL CORE</span>
+						<span class="preloader-percent" data-preloader-percent>0%</span>
+					</div>
+				</div>
+
+				<div class="preloader-status">
+					<p data-preloader-status>INITIALIZING SYSTEMS...</p>
+				</div>
+			</div>
+			<div class="preloader-glass-shine"></div>
+		</div>
+
+		<div class="preloader-scanlines"></div>
+	</div>
+</div>
+
+<style>
+	/* Pure black background covering the site at all times */
+	.preloader-shell {
+		position: fixed;
+		inset: 0;
+		z-index: 9999;
+		background: #000; 
+		pointer-events: auto;
+	}
+
+	/* The animated CRT container */
+	.crt-display {
+		position: absolute;
+		inset: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background: #0a0a0c;
+		overflow: hidden;
+		/* Slower, more dramatic 2.5s CRT Boot up */
+		animation: crt-turn-on 2.5s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+	}
+
+	.crt-display.crt-turn-off {
+		animation: crt-turn-off 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+	}
+
+	/* --- THE SPHERICAL FISHEYE EFFECT --- */
+	.preloader-crt-glass {
+		position: absolute;
+		/* Stretch slightly beyond edges to curve inward */
+		top: -2%; left: -2%; right: -2%; bottom: -2%;
+		z-index: 9997;
+		pointer-events: none;
+		/* Deep barrel vignette */
+		background: radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.8) 85%, #000 100%);
+		/* Inner shadows to round out the 3D depth */
+		box-shadow: 
+			inset 0 0 120px rgba(0, 0, 0, 1),
+			inset 0 0 40px rgba(255, 255, 255, 0.03);
+	}
+
+	/* The 3D curved glass glare (top reflection) */
+	.preloader-crt-glass::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 10%;
+		right: 10%;
+		height: 45%;
+		border-radius: 50%;
+		background: radial-gradient(ellipse at bottom, rgba(255, 255, 255, 0.08) 0%, transparent 65%);
+		filter: blur(10px);
+	}
+
+	.preloader-glass-frame {
+		position: relative;
+		width: min(420px, 90vw);
+		background: linear-gradient(135deg, rgba(77, 162, 255, 0.08) 0%, rgba(77, 162, 255, 0.02) 100%);
+		border: 2px solid rgba(77, 162, 255, 0.35);
+		border-radius: 4px;
+		backdrop-filter: blur(16px) saturate(180%);
+		box-shadow: 
+			0 20px 50px rgba(0, 0, 0, 0.7),
+			inset 0 1px 1px rgba(255, 255, 255, 0.25),
+			0 0 40px rgba(77, 162, 255, 0.15);
+		z-index: 2;
+	}
+
+	.preloader-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 0.8rem 1.2rem;
+		background: linear-gradient(180deg, rgba(77, 162, 255, 0.12) 0%, rgba(77, 162, 255, 0) 100%);
+		border-bottom: 1px solid rgba(77, 162, 255, 0.2);
+	}
+
+	.preloader-title, .preloader-text, .preloader-percent, .preloader-status p {
+		animation: chromatic-pulse 3s infinite alternate;
+	}
+
+	@keyframes chromatic-pulse {
+		0%, 100% {
+			text-shadow: 
+				1px 0px 1px rgba(255, 0, 0, 0.6), 
+				-1px 0px 1px rgba(0, 255, 255, 0.6);
+		}
+		50% {
+			text-shadow: 
+				2px 0px 2px rgba(255, 0, 0, 0.8), 
+				-2px 0px 2px rgba(0, 255, 255, 0.8);
+		}
+	}
+
+	.preloader-title {
+		font-size: 0.85rem;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 500;
+		letter-spacing: 0.08rem;
+		text-transform: uppercase;
+	}
+
+	.preloader-controls {
+		display: flex;
+		gap: 6px;
+	}
+
+	.preloader-btn {
+		width: 12px;
+		height: 12px;
+		border-radius: 2px;
+		background: rgba(77, 162, 255, 0.3);
+		border: 1px solid rgba(77, 162, 255, 0.4);
+	}
+
+	.preloader-btn--close {
+		background: rgba(200, 100, 100, 0.3);
+		border-color: rgba(200, 100, 100, 0.4);
+	}
+
+	.preloader-body {
+		padding: 2.4rem 1.8rem;
+		display: flex;
+		flex-direction: column;
+		gap: 1.8rem;
+	}
+
+	.preloader-animation-container {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1.2rem;
+	}
+
+	.preloader-canvas {
+		width: 96px;
+		height: 96px;
+		filter: drop-shadow(0 0 16px rgba(77, 162, 255, 0.4));
+	}
+
+	.preloader-dots {
+		display: flex;
+		gap: 8px;
+		justify-content: center;
+	}
+
+	.dot {
+		width: 8px;
+		height: 8px;
+		border-radius: 50%;
+		background: #76cdff;
+		box-shadow: 0 0 8px rgba(118, 205, 255, 0.6);
+		animation: dot-bounce 1.2s infinite;
+	}
+
+	.dot--1 { animation-delay: 0s; }
+	.dot--2 { animation-delay: 0.2s; }
+	.dot--3 { animation-delay: 0.4s; }
+
+	@keyframes dot-bounce {
+		0%, 100% { transform: translateY(0); opacity: 0.6; }
+		50% { transform: translateY(-10px); opacity: 1; }
+	}
+
+	.preloader-bar-container {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6rem;
+	}
+
+	.preloader-bar-frame {
+		position: relative;
+		height: 16px;
+		background: rgba(0, 0, 0, 0.5);
+		border: 1.5px solid rgba(77, 162, 255, 0.3);
+		border-radius: 2px;
+		overflow: hidden;
+		box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+	}
+
+	.preloader-bar-fill {
+		height: 100%;
+		width: 0%;
+		background: linear-gradient(90deg, 
+			rgba(118, 205, 255, 0.4) 0%, 
+			#4da2ff 50%, 
+			rgba(77, 162, 255, 0.6) 100%);
+		box-shadow: 
+			0 0 10px rgba(77, 162, 255, 0.6),
+			inset 0 1px 2px rgba(255, 255, 255, 0.2);
+		transition: width 200ms ease-out;
+	}
+
+	.preloader-label {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.preloader-text,
+	.preloader-percent {
+		font-size: 0.7rem;
+		color: rgba(200, 230, 255, 0.75);
+		font-weight: 500;
+		letter-spacing: 0.02rem;
+		text-transform: uppercase;
+	}
+
+	.preloader-status {
+		text-align: center;
+	}
+
+	.preloader-status p {
+		margin: 0;
+		font-size: 0.75rem;
+		color: rgba(200, 230, 255, 0.65);
+		letter-spacing: 0.04rem;
+		text-transform: uppercase;
+		animation: 
+			preloader-glitch 2.5s steps(3, end) infinite,
+			chromatic-pulse 3s infinite alternate;
+	}
+
+	@keyframes preloader-glitch {
+		0%, 100% {
+			content: 'INITIALIZING SYSTEMS...';
+			color: rgba(200, 230, 255, 0.65);
+		}
+		33% { color: rgba(200, 230, 255, 0.45); }
+		66% { color: rgba(200, 230, 255, 0.75); }
+	}
+
+	.preloader-glass-shine {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 30%;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 100%);
+		pointer-events: none;
+	}
+
+	.preloader-scanlines {
+		position: absolute;
+		inset: 0;
+		z-index: 9998;
+		background: repeating-linear-gradient(
+			0deg,
+			rgba(0, 0, 0, 0.08),
+			rgba(0, 0, 0, 0.08) 1px,
+			transparent 1px,
+			transparent 3px
+		);
+		pointer-events: none;
+		opacity: 0.5;
+	}
+
+	/* CRT Boot Up Sequence */
+	@keyframes crt-turn-on {
+		0% { 
+			transform: scale(1, 0.002); 
+			opacity: 0; 
+			filter: brightness(10) contrast(2); 
+		}
+		5% { 
+			transform: scale(1, 0.002); 
+			opacity: 1; 
+			filter: brightness(10) contrast(2); 
+		}
+		55% { 
+			transform: scale(1, 0.002); 
+			opacity: 1; 
+			filter: brightness(10) contrast(2); 
+		}
+		100% { 
+			transform: scale(1, 1); 
+			opacity: 1; 
+			filter: brightness(1) contrast(1); 
+		}
+	}
+
+	/* CRT Power Down Sequence */
+	@keyframes crt-turn-off {
+		0% { 
+			transform: scale(1, 1); 
+			filter: brightness(1); 
+			opacity: 1; 
+		}
+		40% { 
+			transform: scale(1, 0.005); 
+			filter: brightness(10); 
+			opacity: 1; 
+		}
+		80% { 
+			transform: scale(0, 0.005); 
+			filter: brightness(10); 
+			opacity: 1; 
+		}
+		100% { 
+			transform: scale(0, 0); 
+			filter: brightness(10); 
+			opacity: 0; 
+		}
+	}
+</style>
+
+<script>
+	function initPreloader() {
+		const shell = document.querySelector('[data-preloader]') as HTMLElement;
+		const crtDisplay = document.querySelector('[data-crt]');
+		const progressBar = document.querySelector('[data-preloader-progress]') as HTMLElement;
+		const percentText = document.querySelector('[data-preloader-percent]');
+		const statusText = document.querySelector('[data-preloader-status]');
+		const canvas = document.getElementById('gl-heart-canvas') as HTMLCanvasElement;
+		
+		if (!shell || !crtDisplay || !progressBar || !percentText || !statusText || !canvas) return;
+
+		// --- WEBGL SETUP ---
+		const gl = canvas.getContext('webgl', { alpha: true });
+		if (!gl) return;
+
+		const vsSource = `
+			attribute vec4 aVertexPosition;
+			void main() {
+				gl_Position = aVertexPosition;
+			}
+		`;
+
+		const fsSource = `
+			precision mediump float;
+			uniform vec2 u_resolution;
+			uniform float u_time;
+
+			// Pseudo-random noise function
+			float random(vec2 st) {
+				return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+			}
+
+			// 1. SDF: Heart (Core)
+			float sdHeart(vec2 p) {
+				p.x = abs(p.x);
+				if( p.y+p.x>1.0 ) return sqrt(dot(p-vec2(0.25,0.75), p-vec2(0.25,0.75))) - sqrt(2.0)/4.0;
+				return sqrt(min(dot(p-vec2(0.00,1.00), p-vec2(0.00,1.00)), dot(p-0.5*max(p.x+p.y,0.0), p-0.5*max(p.x+p.y,0.0)))) * sign(p.x-p.y);
+			}
+
+			// 2. SDF: Eye (Design / Vision)
+			float sdEye(vec2 p) {
+				return max(length(p - vec2(0.0, 1.2)) - 1.5, length(p - vec2(0.0, -1.2)) - 1.5);
+			}
+
+			// 3. SDF: Screen/Box (Web Dev)
+			float sdBox(vec2 p, vec2 b) {
+				vec2 d = abs(p) - b;
+				return length(max(d,0.0)) + min(max(d.x,d.y),0.0) - 0.05; // -0.05 adds rounded corners
+			}
+
+			// 4. SDF: Pen Nib / Diamond (Writing)
+			float sdDiamond(vec2 p) {
+				p = abs(p);
+				return (p.x + p.y) * 0.7 - 0.45;
+			}
+
+			void main() {
+				vec2 uv = gl_FragCoord.xy / u_resolution;
+				
+				// Center coordinates
+				vec2 baseP = (2.0 * gl_FragCoord.xy - u_resolution) / min(u_resolution.x, u_resolution.y);
+
+				// Real-time glitch effect mapped to time
+				float glitch = random(vec2(floor(u_time * 12.0), uv.y)) * 0.1;
+				if(random(vec2(floor(u_time * 4.0))) > 0.88) {
+					baseP.x += glitch * sin(u_time * 30.0);
+				}
+
+				// Throbbing pulse animation mapped to time
+				float pulse = 1.0 + sin(u_time * 5.0) * 0.05 + sin(u_time * 10.0) * 0.02;
+				baseP *= pulse;
+
+				// --- SHAPE CALCULATIONS ---
+				vec2 pHeart = baseP; pHeart.y -= 0.35; // Offset heart slightly
+				float dHeart = sdHeart(pHeart * 2.4);
+				float dEye = sdEye(baseP * 1.8);
+				float dBox = sdBox(baseP * 1.6, vec2(0.4));
+				float dDiamond = sdDiamond(baseP * 1.8);
+
+				// --- MORPHING SEQUENCE ---
+				// Control the speed of the shape cycle
+				float cycle = mod(u_time * 0.7, 4.0); 
+				float stage = floor(cycle);
+				
+				// smoothstep(0.6, 1.0) means it stays solid for 60% of the time, then smoothly morphs for 40%
+				float morph = smoothstep(0.6, 1.0, fract(cycle)); 
+				
+				float d; // The final combined shape distance
+				if (stage == 0.0) d = mix(dHeart, dEye, morph);
+				else if (stage == 1.0) d = mix(dEye, dBox, morph);
+				else if (stage == 2.0) d = mix(dBox, dDiamond, morph);
+				else d = mix(dDiamond, dHeart, morph);
+
+				// --- RENDERING ---
+				vec3 coreColor = vec3(0.10, 0.23, 0.31); 
+				vec3 outlineColor = vec3(0.46, 0.80, 1.0); 
+				float noise = random(uv * u_time) * 0.05;
+				
+				// Anti-aliased edges
+				float coreFill = 1.0 - smoothstep(-0.01, 0.01, d);
+				float outlineFill = 1.0 - smoothstep(0.01, 0.12, d);
+
+				vec4 color = vec4(0.0);
+
+				// Draw outline
+				if (outlineFill > 0.0) {
+					float alpha = smoothstep(0.12, 0.0, d) * 0.9;
+					color = vec4(outlineColor, alpha);
+				}
+
+				// Draw inner core
+				if (coreFill > 0.0) {
+					vec4 innerColor = vec4(coreColor + noise, 0.4);
+					color = mix(color, innerColor, coreFill);
+				}
+
+				gl_FragColor = color;
+			}
+		`;
+        
+		function createShader(gl: WebGLRenderingContext, type: number, source: string) {
+			const shader = gl.createShader(type)!;
+			gl.shaderSource(shader, source);
+			gl.compileShader(shader);
+			return shader;
+		}
+
+		const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
+		const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+		
+		const shaderProgram = gl.createProgram()!;
+		gl.attachShader(shaderProgram, vertexShader);
+		gl.attachShader(shaderProgram, fragmentShader);
+		gl.linkProgram(shaderProgram);
+		gl.useProgram(shaderProgram);
+
+		const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+		const positionBuffer = gl.createBuffer();
+		gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+		const positionLocation = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+		gl.enableVertexAttribArray(positionLocation);
+		gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+		const timeLocation = gl.getUniformLocation(shaderProgram, "u_time");
+		const resolutionLocation = gl.getUniformLocation(shaderProgram, "u_resolution");
+
+		let animationFrameId: number;
+		let startTime = Date.now();
+
+		function render() {
+			gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+			gl.uniform1f(timeLocation, (Date.now() - startTime) / 1000.0);
+			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+			animationFrameId = requestAnimationFrame(render);
+		}
+		
+		render();
+
+		// --- PROGRESS LOGIC ---
+		let progress = 0;
+		let isLoading = true;
+		let heartDetected = false;
+
+		const statusMessages = [
+			'INITIALIZING SYSTEMS...',
+			'LOADING NEURAL CORE...',
+			'ANALYZING VITALS...',
+			'SYNCHRONIZING FRAMEWORK...',
+			'NEURAL PATTERN LOCK...',
+		];
+		let messageIndex = 0;
+
+		const progressInterval = setInterval(() => {
+			if (!isLoading) return;
+
+			const remaining = 100 - progress;
+			let increment;
+			
+			if (progress < 30) {
+				increment = Math.random() * remaining * 0.12 + 1.5;
+			} else if (progress < 70) {
+				increment = Math.random() * remaining * 0.1 + 0.8;
+			} else {
+				increment = Math.random() * remaining * 0.08 + 0.4;
+			}
+			
+			progress = Math.min(progress + increment, heartDetected ? 99 : 95);
+
+			progressBar.style.width = `${progress}%`;
+			percentText.textContent = `${Math.round(progress)}%`;
+
+			if (Math.random() > 0.88 && messageIndex < statusMessages.length - 1) {
+				messageIndex = (messageIndex + 1) % statusMessages.length;
+				statusText.textContent = statusMessages[messageIndex];
+			}
+		}, 350);
+
+		const waitForHeartLoad = setInterval(() => {
+			const heartGroup = document.querySelector('[data-hero]'); 
+			const heroExists = heartGroup && (heartGroup as HTMLElement).offsetHeight > 0;
+			
+			if (heroExists && !heartDetected) {
+				heartDetected = true;
+				progress = Math.min(progress + 8, 98);
+			}
+
+			if (heartDetected && progress > 85) {
+				completeLoading();
+			}
+		}, 150);
+
+		function completeLoading() {
+			clearInterval(progressInterval);
+			clearInterval(waitForHeartLoad);
+			isLoading = false;
+			
+			progressBar.style.width = '100%';
+			percentText.textContent = '100%';
+			statusText.textContent = 'NEURAL CORE LOADED';
+
+			setTimeout(() => {
+				// 1. Turn off the CRT screen inside the shell
+				crtDisplay.classList.add('crt-turn-off');
+				
+				setTimeout(() => {
+					// 2. Once the dot vanishes, fade away the black outer shell
+					shell.style.transition = 'opacity 0.4s ease-out';
+					shell.style.opacity = '0';
+					
+					setTimeout(() => {
+						shell.style.display = 'none';
+						cancelAnimationFrame(animationFrameId); 
+					}, 400); // Wait for the fade to finish
+				}, 550); // Timed perfectly with the end of the CRT shrink animation
+			}, 800);
+		}
+
+		// Fallback hide
+		setTimeout(() => {
+			if (isLoading) completeLoading();
+		}, 6000);
+	}
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initPreloader);
+	} else {
+		initPreloader();
+	}
+</script>
