@@ -34,18 +34,18 @@ let _scrollProgress = 0;
 export function setDreamScrollVelocity(v: number): void { _lenisVelocity = v; }
 export function setDreamScrollProgress(p: number): void { _scrollProgress = clamp(p, 0, 1); }
  
-const DECLARATION = 'I retrieve things from dreams I dreamt on a long night.';
-const GLYPH_FONT = '500 56px "Space Grotesk", sans-serif';
+const DECLARATION = 'Retrieving things from dreams on a long night.';
+const GLYPH_FONT = '500 56px "Unbounded", sans-serif';
 const GLYPH_LINE_HEIGHT = 76;
  
 // Target world-space size the loaded staircase model is normalized to.
 // Was 5.0 — scaled up so the hero piece reads as a real object, not a prop.
-const STAIR_TARGET_SIZE = 9.0;
+const STAIR_TARGET_SIZE = 12;
  
 // Single source of truth for the staircase's base orientation. Previously
 // this was two magic numbers (0.4, -0.4) duplicated in both the instance
 // builder and the render loop — now it's one named value used everywhere.
-const STAIR_ROTATION = new THREE.Euler(0.4, -0.4, -0.14);
+const STAIR_ROTATION = new THREE.Euler(0, 1.57, 0);
  
 // ---------------------------------------------------------------------------
 // Viewport Scroll Math
@@ -566,7 +566,7 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 	const composer = new EffectComposer(renderer);
 	composer.addPass(new RenderPass(scene, camera));
 
-	const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.28, 0.45, 0.24);
+	const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.23, 0.7, 0.3);
 	composer.addPass(bloomPass);
 
 	const lensPass = new ShaderPass(CustomLensShader);
@@ -694,18 +694,18 @@ const render = (time: number): void => {
 			inst.wireTiltY = lerp(inst.wireTiltY, mouseTiltX * 0.08 * inst.ix, 0.05);
 
 			let currentZ = inst.solidZ;
-			let stretchZ = 1.0;
+			let stretchX = 1.0;
 
 			if (inst.ix === 0) {
 				// Easing curve: Starts at 5% scroll, ends at 35%
-				const beamProgress = smoothstep(0.08, 0.6, scrollProgress);
+				const beamProgress = smoothstep(0.15, 0.5, scrollProgress);
 				
 				// Pull it from the deep horizon
 				currentZ += lerp(-150, 0, beamProgress);
 				
 				// Stretch it into a continuous light-trail
-				stretchZ = lerp(60, 1, beamProgress);
-				
+				stretchX = lerp(60, 1, beamProgress);
+
 				// Feed HDR flare values into the shader
 				const mat = inst.mesh.material as THREE.ShaderMaterial;
 				mat.uniforms.uFlare.value = lerp(10.0, 0.0, beamProgress); 
@@ -718,9 +718,11 @@ const render = (time: number): void => {
 			const rotZ = STAIR_ROTATION.z * inst.mirrorX + (inst.ix === 0 ? Math.PI / 4 : 0);
 			inst.mesh.rotation.set(rotX, rotY, rotZ);
 			// Force the center instance to be flipped on X explicitly
-			const xScale = inst.ix === 0 ? -Math.abs(inst.wireScale) : inst.mirrorX * Math.abs(inst.wireScale);
+			const xScale = inst.ix === 0 
+				? -Math.abs(inst.wireScale) * stretchX 
+				: inst.mirrorX * Math.abs(inst.wireScale);
 			const yScale = Math.abs(inst.wireScale);
-			const zScale = Math.abs(inst.wireScale) * stretchZ; 
+			const zScale = Math.abs(inst.wireScale); 
 			
 			inst.mesh.scale.set(xScale, yScale, zScale);
 			
