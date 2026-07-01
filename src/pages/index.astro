@@ -27,6 +27,10 @@ const projects = [
 				<canvas class="fire-canvas"  data-fire-canvas></canvas>
 				<canvas class="ink-canvas"   data-ink-canvas></canvas>
 				<div class="scroll-prompt" data-scroll-prompt>scroll to explore</div>
+				<div class="hero-copy" data-hero-copy>
+					<p class="hero-copy-line hero-copy-line--one">This is where it opens.</p>
+					<p class="hero-copy-line hero-copy-line--two">Come in.</p>
+				</div>
 
 				<div class="scan-hud" aria-hidden="true">
 					<div class="aero-window">
@@ -69,35 +73,28 @@ const projects = [
 				<div data-dimension-label><strong>04</strong> Ventricular Chambers</div>
 				<div data-dimension-label><strong>05</strong> Myocardial Apex</div>
 			</div>
-
 			<div class="hero-progress" aria-hidden="true">
 				<span data-hero-progress></span>
 			</div>
+			<svg class="hero-border-svg" aria-hidden="true">
+				<defs>
+					<linearGradient id="hero-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+						<stop offset="0%" stop-color="#8fdcff" />
+						<stop offset="100%" stop-color="#4da2ff" />
+					</linearGradient>
+				</defs>
+				
+				<path class="hero-border-path" />
+				<path class="hero-border-path" />
+			</svg>
 		</section>
 
 		<!-- ═══════════════════════════════════════════
-		     ZONE 01.5 — NARRATIVE COPY BRIDGE
+		     ZONE 02 — DREAM CANVAS
 		════════════════════════════════════════════ -->
-		<section class="hero-copy" data-hero-copy>
-			<div class="hero-copy-inner">
-				<p class="hero-copy-line hero-copy-line--one">This is where the work starts.</p>
-				<p class="hero-copy-line hero-copy-line--two">Thankfully, we know how to get in.</p>
-			</div>
-		</section>
-
-		<!-- ═══════════════════════════════════════════
-		     ZONE 02 — SIGNAL CANVAS
-		════════════════════════════════════════════ -->
-		<section class="signal-zone canvas-zone" data-canvas-zone="signal">
-			<canvas data-signal-canvas></canvas>
-			<div class="zone-copy">
-				<p class="eyebrow">ZONE 02 / SIGNAL FOUND</p>
-				<h2 data-scramble="Language becomes image">Language becomes image</h2>
-				<p>
-					A moving field for the work between design, cinema, art, and writing:
-					ideas becoming atmosphere before they become objects.
-				</p>
-			</div>
+		<section class="dream-zone canvas-zone" data-canvas-zone="dream">
+			<canvas data-dream-canvas></canvas>
+			<!-- No DOM copy — declaration is rendered character-by-character via pretext onto canvas -->
 		</section>
 
 		<!-- ═══════════════════════════════════════════
@@ -164,27 +161,48 @@ const projects = [
 ════════════════════════════════════════════ -->
 <script>
 	import { setupHeartScene }     from '../scenes/HeartScene';
-	import { setupSignalCanvas }   from '../scenes/SignalCanvas';
+	import { setupDreamCanvas, setDreamScrollVelocity } from '../scenes/DreamCanvas';
 	import { setupVoidCanvas }     from '../scenes/VoidCanvas';
 	import { setupCursor }         from '../controllers/CursorController';
 	import { setupHeroCopyReveal, setupWorkReveal } from '../controllers/ScrollReveal';
-
+	import Lenis from 'lenis';
+	
 	// Boot all systems
 	const heart      = setupHeartScene();
-	const signal     = setupSignalCanvas();
+	const dream      = setupDreamCanvas();
 	const void_      = setupVoidCanvas();
 	const cursor     = setupCursor();
 	const heroCopy   = setupHeroCopyReveal();
 	const workReveal = setupWorkReveal();
 
+	// 2. Initialize Lenis to prevent scrolling too fast
+    const lenis = new Lenis({
+        lerp: 0.08,             // Smoothness (lower = softer/slower catching up)
+        wheelMultiplier: 0.4,   // <-- REDUCE THIS (e.g., 0.4) to limit scroll speed per flick
+        smoothWheel: true,
+    });
+
+	// 3. Feed real-time Lenis scroll velocity into DreamCanvas
+	lenis.on('scroll', (e: { velocity: number }) => {
+		setDreamScrollVelocity(e.velocity);
+	});
+
+    // 4. Mount Lenis to the browser's requestAnimationFrame
+    function raf(time: number) {
+        lenis.raf(time);
+        requestAnimationFrame(raf);
+    }
+    requestAnimationFrame(raf);
+
 	// Unified cleanup for view transitions / HMR
 	const destroy = (): void => {
 		heart?.destroy();
-		signal?.destroy();
+		dream?.destroy();
 		void_?.destroy();
 		cursor?.destroy();
 		heroCopy?.();
 		workReveal?.();
+        lenis.destroy(); // <-- 5. Clean up Lenis on page swap
 	};
 
 	document.addEventListener('astro:before-swap', destroy, { once: true });
@@ -226,12 +244,12 @@ const projects = [
 
 	/* ─── Zone 01: Heart sequence ────────────────────── */
 	.hero-sequence {
+		height: 750vh;
+    	min-height: 4125px;
 		--heart-opacity: 0;
 		--heart-darkness: 0;
 		--hud-opacity: 0;
 		position: relative;
-		height: 600vh;
-		min-height: 3300px;
 		background:
 			radial-gradient(circle at 50% 46%, rgba(77, 162, 255, calc(var(--heart-opacity) * 0.14)), transparent 38%),
 			#000000;
@@ -544,14 +562,14 @@ const projects = [
 	}
 
 	.hero-progress {
-		position: fixed;
-		top: 18vh;
-		right: 22px;
-		z-index: 20;
-		width: 2px;
-		height: 64vh;
-		background: rgba(77, 162, 255, 0.12);
-		opacity: max(0.22, var(--heart-opacity));
+    position: fixed;
+    top: 18vh;
+    right: 24px;
+    z-index: 20;
+    width: 2px;
+    height: 64vh;
+    background: rgba(77, 162, 255, 0.12);
+    opacity: 1;
 	}
 
 	.hero-progress span {
@@ -563,21 +581,48 @@ const projects = [
 		background: linear-gradient(#8fdcff, #4da2ff);
 		box-shadow: 0 0 18px rgba(77, 162, 255, 0.85);
 	}
+	.hero-border-svg {
+		position: fixed;
+		top: 24px;
+		left: 24px;
+		width: calc(100vw - 48px);
+		height: calc(100vh - 48px);
+		pointer-events: none;
+		z-index: 999;
 
-	/* ─── Zone 01.5: Hero copy ───────────────────────── */
-	.hero-copy {
-		position: relative;
-		min-height: 100vh;
-		display: grid;
-		place-items: center;
-		padding: clamp(3rem, 8vw, 5rem) 1.5rem;
-		background: #020208;
-		opacity: 0;
-		transform: translateY(24px);
-		transition: opacity 520ms ease, transform 520ms ease;
+		overflow: visible;
+		/* 1:1 match with your progress bar's box-shadow */
+		filter: drop-shadow(0 0 18px rgba(77, 162, 255, 0.85));
+		will-change: transform, opacity;
+		transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease-out;
+		}
+
+
+	.hero-border-path {
+		fill: none;
+		/* Map the stroke to the SVG gradient we defined in HTML */
+		stroke: url(#hero-gradient);
+		stroke-width: 2px;
+		stroke-linecap: round;
+		will-change: stroke-dashoffset;
 	}
 
-	.hero-copy.is-visible { opacity: 1; transform: translateY(0); }
+	.hero-border-svg.is-snapped {
+		transform: scale(1.02);
+		opacity: 0;
+	}
+	/* ─── Zone 01.5: Hero copy ───────────────────────── */
+	.hero-copy {
+		position: absolute;
+		inset: 0;
+		z-index: 10;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		pointer-events: none;
+		opacity: 0;
+	}
 
 	.hero-copy-line {
 		margin: 0;
@@ -586,9 +631,7 @@ const projects = [
 		line-height: 1.05;
 		font-weight: 600;
 		letter-spacing: -0.01em;
-		opacity: 0;
-		transform: translateY(20px);
-		transition: opacity 320ms ease, transform 320ms ease;
+		text-align: center;
 		text-shadow: 0 0 22px rgba(255, 255, 255, 0.18), 0 20px 48px rgba(23, 96, 176, 0.16);
 	}
 
@@ -598,7 +641,6 @@ const projects = [
 		font-size: clamp(1.2rem, 2.8vw, 2.4rem);
 		font-weight: 520;
 	}
-
 	/* ─── Canvas zones (signal + void shared) ────────── */
 	.canvas-zone {
 		position: relative;
@@ -609,14 +651,23 @@ const projects = [
 		padding: clamp(2rem, 6vw, 5rem);
 	}
 
-	.signal-zone {
+	.dream-zone {
+		min-height: 140vh;
 		background:
-			radial-gradient(circle at 20% 50%, rgba(0, 170, 255, 0.1), transparent 35%),
-			#05070c;
+			radial-gradient(circle at 50% 60%, rgba(0, 100, 200, 0.07), transparent 50%),
+			#05070b;
+		/* No padding — canvas fills the full section */
+		padding: 0;
+		display: block;
 	}
 
-	.zone-copy { position: relative; z-index: 2; width: min(680px, 92vw); }
-	.zone-copy p:not(.eyebrow) { max-width: 52ch; color: rgba(225, 240, 255, 0.68); }
+	.dream-zone canvas {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		display: block;
+	}
 
 	/* ─── Zone 03: Work list ─────────────────────────── */
 	.work-zone {

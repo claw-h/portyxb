@@ -358,253 +358,111 @@
 </style>
 
 <script>
-	function initPreloader() {
-		const shell = document.querySelector('[data-preloader]') as HTMLElement;
-		const crtDisplay = document.querySelector('[data-crt]');
+	document.addEventListener('DOMContentLoaded', () => {
 		const progressBar = document.querySelector('[data-preloader-progress]') as HTMLElement;
-		const percentText = document.querySelector('[data-preloader-percent]');
-		const statusText = document.querySelector('[data-preloader-status]');
-		const canvas = document.getElementById('gl-heart-canvas') as HTMLCanvasElement;
-		
-		if (!shell || !crtDisplay || !progressBar || !percentText || !statusText || !canvas) return;
+		const percentText = document.querySelector('[data-preloader-percent]') as HTMLElement;
+		const statusText = document.querySelector('.preloader-label .preloader-text') as HTMLElement;
+		const shell = document.querySelector('[data-preloader]') as HTMLElement;
+		const crtDisplay = document.querySelector('[data-crt]') as HTMLElement;
 
-		// --- WEBGL SETUP ---
-		const gl = canvas.getContext('webgl', { alpha: true });
-		if (!gl) return;
+		if (!progressBar || !percentText || !statusText || !shell || !crtDisplay) return;
 
-		const vsSource = `
-			attribute vec4 aVertexPosition;
-			void main() {
-				gl_Position = aVertexPosition;
-			}
-		`;
-
-		const fsSource = `
-			precision mediump float;
-			uniform vec2 u_resolution;
-			uniform float u_time;
-
-			// Pseudo-random noise function
-			float random(vec2 st) {
-				return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
-			}
-
-			// 1. SDF: Heart (Core)
-			float sdHeart(vec2 p) {
-				p.x = abs(p.x);
-				if( p.y+p.x>1.0 ) return sqrt(dot(p-vec2(0.25,0.75), p-vec2(0.25,0.75))) - sqrt(2.0)/4.0;
-				return sqrt(min(dot(p-vec2(0.00,1.00), p-vec2(0.00,1.00)), dot(p-0.5*max(p.x+p.y,0.0), p-0.5*max(p.x+p.y,0.0)))) * sign(p.x-p.y);
-			}
-
-			// 2. SDF: Eye (Design / Vision)
-			float sdEye(vec2 p) {
-				return max(length(p - vec2(0.0, 1.2)) - 1.5, length(p - vec2(0.0, -1.2)) - 1.5);
-			}
-
-			// 3. SDF: Screen/Box (Web Dev)
-			float sdBox(vec2 p, vec2 b) {
-				vec2 d = abs(p) - b;
-				return length(max(d,0.0)) + min(max(d.x,d.y),0.0) - 0.05; // -0.05 adds rounded corners
-			}
-
-			// 4. SDF: Pen Nib / Diamond (Writing)
-			float sdDiamond(vec2 p) {
-				p = abs(p);
-				return (p.x + p.y) * 0.7 - 0.45;
-			}
-
-			void main() {
-				vec2 uv = gl_FragCoord.xy / u_resolution;
-				
-				// Center coordinates
-				vec2 baseP = (2.0 * gl_FragCoord.xy - u_resolution) / min(u_resolution.x, u_resolution.y);
-
-				// Real-time glitch effect mapped to time
-				float glitch = random(vec2(floor(u_time * 12.0), uv.y)) * 0.1;
-				if(random(vec2(floor(u_time * 4.0))) > 0.88) {
-					baseP.x += glitch * sin(u_time * 30.0);
-				}
-
-				// Throbbing pulse animation mapped to time
-				float pulse = 1.0 + sin(u_time * 5.0) * 0.05 + sin(u_time * 10.0) * 0.02;
-				baseP *= pulse;
-
-				// --- SHAPE CALCULATIONS ---
-				vec2 pHeart = baseP; pHeart.y -= 0.35; // Offset heart slightly
-				float dHeart = sdHeart(pHeart * 2.4);
-				float dEye = sdEye(baseP * 1.8);
-				float dBox = sdBox(baseP * 1.6, vec2(0.4));
-				float dDiamond = sdDiamond(baseP * 1.8);
-
-				// --- MORPHING SEQUENCE ---
-				// Control the speed of the shape cycle
-				float cycle = mod(u_time * 0.7, 4.0); 
-				float stage = floor(cycle);
-				
-				// smoothstep(0.6, 1.0) means it stays solid for 60% of the time, then smoothly morphs for 40%
-				float morph = smoothstep(0.6, 1.0, fract(cycle)); 
-				
-				float d; // The final combined shape distance
-				if (stage == 0.0) d = mix(dHeart, dEye, morph);
-				else if (stage == 1.0) d = mix(dEye, dBox, morph);
-				else if (stage == 2.0) d = mix(dBox, dDiamond, morph);
-				else d = mix(dDiamond, dHeart, morph);
-
-				// --- RENDERING ---
-				vec3 coreColor = vec3(0.10, 0.23, 0.31); 
-				vec3 outlineColor = vec3(0.46, 0.80, 1.0); 
-				float noise = random(uv * u_time) * 0.05;
-				
-				// Anti-aliased edges
-				float coreFill = 1.0 - smoothstep(-0.01, 0.01, d);
-				float outlineFill = 1.0 - smoothstep(0.01, 0.12, d);
-
-				vec4 color = vec4(0.0);
-
-				// Draw outline
-				if (outlineFill > 0.0) {
-					float alpha = smoothstep(0.12, 0.0, d) * 0.9;
-					color = vec4(outlineColor, alpha);
-				}
-
-				// Draw inner core
-				if (coreFill > 0.0) {
-					vec4 innerColor = vec4(coreColor + noise, 0.4);
-					color = mix(color, innerColor, coreFill);
-				}
-
-				gl_FragColor = color;
-			}
-		`;
-        
-		function createShader(gl: WebGLRenderingContext, type: number, source: string) {
-			const shader = gl.createShader(type)!;
-			gl.shaderSource(shader, source);
-			gl.compileShader(shader);
-			return shader;
-		}
-
-		const vertexShader = createShader(gl, gl.VERTEX_SHADER, vsSource);
-		const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
-		
-		const shaderProgram = gl.createProgram()!;
-		gl.attachShader(shaderProgram, vertexShader);
-		gl.attachShader(shaderProgram, fragmentShader);
-		gl.linkProgram(shaderProgram);
-		gl.useProgram(shaderProgram);
-
-		const positions = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
-		const positionBuffer = gl.createBuffer();
-		gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
-
-		const positionLocation = gl.getAttribLocation(shaderProgram, "aVertexPosition");
-		gl.enableVertexAttribArray(positionLocation);
-		gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-		const timeLocation = gl.getUniformLocation(shaderProgram, "u_time");
-		const resolutionLocation = gl.getUniformLocation(shaderProgram, "u_resolution");
-
-		let animationFrameId: number;
-		let startTime = Date.now();
-
-		function render() {
-			gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-			gl.uniform1f(timeLocation, (Date.now() - startTime) / 1000.0);
-			gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-			animationFrameId = requestAnimationFrame(render);
-		}
-		
-		render();
-
-		// --- PROGRESS LOGIC ---
-		let progress = 0;
-		let isLoading = true;
-		let heartDetected = false;
-
-		const statusMessages = [
-			'INITIALIZING SYSTEMS...',
-			'LOADING NEURAL CORE...',
-			'ANALYZING VITALS...',
-			'SYNCHRONIZING FRAMEWORK...',
-			'NEURAL PATTERN LOCK...',
+		// ── ALL MASTER SITE ASSETS TO WARM UP CACHE ──
+		const assetsToPreload = [
+			'/staircase.glb', // Dream scene 3D architecture
+			'/heart.glb',     // Hero scene 3D heart model
+			// If you use any specific heavy environmental textures or audio files, add them here:
+			// '/textures/phosphor_grid.png',
 		];
-		let messageIndex = 0;
 
-		const progressInterval = setInterval(() => {
-			if (!isLoading) return;
+		let loadedCount = 0;
+		let displayProgress = 0;
+		let targetProgress = 0;
 
-			const remaining = 100 - progress;
-			let increment;
-			
-			if (progress < 30) {
-				increment = Math.random() * remaining * 0.12 + 1.5;
-			} else if (progress < 70) {
-				increment = Math.random() * remaining * 0.1 + 0.8;
-			} else {
-				increment = Math.random() * remaining * 0.08 + 0.4;
+		// Status messages to cycles through to look cool while caching
+		const systemNodes = [
+			'INITIALIZING NEURAL CORES...',
+			'MOUNTING GEOMETRIC MATRICES...',
+			'COMPILING PHOSPHOR SHADERS...',
+			'STABILIZING VISUAL HORIZONS...'
+		];
+		let nodeIndex = 0;
+		
+		const statusInterval = setInterval(() => {
+			if (targetProgress < 100) {
+				statusText.textContent = systemNodes[nodeIndex % systemNodes.length];
+				nodeIndex++;
 			}
+		}, 600);
+
+		// 1. Smooth Easing Loop for the Bar
+		const progressTicker = setInterval(() => {
+			// Smoothly slide progress toward target
+			displayProgress += (targetProgress - displayProgress) * 0.08;
+			const currentPercent = Math.floor(displayProgress);
 			
-			progress = Math.min(progress + increment, heartDetected ? 99 : 95);
+			progressBar.style.width = `${displayProgress}%`;
+			percentText.textContent = `${currentPercent}%`;
 
-			progressBar.style.width = `${progress}%`;
-			percentText.textContent = `${Math.round(progress)}%`;
-
-			if (Math.random() > 0.88 && messageIndex < statusMessages.length - 1) {
-				messageIndex = (messageIndex + 1) % statusMessages.length;
-				statusText.textContent = statusMessages[messageIndex];
-			}
-		}, 350);
-
-		const waitForHeartLoad = setInterval(() => {
-			const heartGroup = document.querySelector('[data-hero]'); 
-			const heroExists = heartGroup && (heartGroup as HTMLElement).offsetHeight > 0;
-			
-			if (heroExists && !heartDetected) {
-				heartDetected = true;
-				progress = Math.min(progress + 8, 98);
-			}
-
-			if (heartDetected && progress > 85) {
+			// Once fonts are ready and assets hit 100%, close out
+			if (currentPercent >= 99) {
+				clearInterval(progressTicker);
+				clearInterval(statusInterval);
 				completeLoading();
 			}
-		}, 150);
+		}, 16);
 
+		// 2. Parallel Loading Engine
+		if (assetsToPreload.length > 0) {
+			// Include Font API loading into the progress calculation tracking
+			const totalItems = assetsToPreload.length + 1;
+
+			// Track Custom Font file loading
+			document.fonts.ready.then(() => {
+				loadedCount++;
+				targetProgress = (loadedCount / totalItems) * 100;
+			});
+
+			// Track 3D Models and Binary Assets
+			assetsToPreload.forEach((url) => {
+				fetch(url, { cache: 'force-cache' })
+					.then((res) => {
+						if (!res.ok) throw new Error(`HTTP ${res.status}`);
+						loadedCount++;
+						targetProgress = (loadedCount / totalItems) * 100;
+					})
+					.catch((err) => {
+						console.warn(`Preloader bypassed failed node [${url}]:`, err);
+						// Advance progress anyway so the site never soft-locks for visitors
+						loadedCount++;
+						targetProgress = (loadedCount / totalItems) * 100;
+					});
+			});
+		} else {
+			// Fallback if array is cleared
+			document.fonts.ready.then(() => { targetProgress = 100; });
+		}
+
+		// 3. System Collapse Animation
 		function completeLoading() {
-			clearInterval(progressInterval);
-			clearInterval(waitForHeartLoad);
-			isLoading = false;
-			
 			progressBar.style.width = '100%';
 			percentText.textContent = '100%';
-			statusText.textContent = 'NEURAL CORE LOADED';
+			statusText.textContent = 'NEURAL CORES SECURE';
 
 			setTimeout(() => {
-				// 1. Turn off the CRT screen inside the shell
+				// Fire the CRT turn-off animation
 				crtDisplay.classList.add('crt-turn-off');
 				
 				setTimeout(() => {
-					// 2. Once the dot vanishes, fade away the black outer shell
-					shell.style.transition = 'opacity 0.4s ease-out';
+					// Smooth fade out the preloader overlay completely
+					shell.style.transition = 'opacity 0.45s cubic-bezier(0.25, 1, 0.5, 1)';
 					shell.style.opacity = '0';
 					
 					setTimeout(() => {
 						shell.style.display = 'none';
-						cancelAnimationFrame(animationFrameId); 
-					}, 400); // Wait for the fade to finish
-				}, 550); // Timed perfectly with the end of the CRT shrink animation
-			}, 800);
+					}, 450); 
+				}, 550); 
+			}, 600);
 		}
-
-		// Fallback hide
-		setTimeout(() => {
-			if (isLoading) completeLoading();
-		}, 6000);
-	}
-
-	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', initPreloader);
-	} else {
-		initPreloader();
-	}
+	});
 </script>

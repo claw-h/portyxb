@@ -42,21 +42,20 @@ interface ScrollState {
 
 const SLICE_COUNT = 5;
 const SLICE_GAP = 0.36;
-const SCROLL_DAMPING = 0.08; // Control smooth kinetic scrolling inertia
+const SCROLL_DAMPING = 0.08; 
 
 const TIMELINE = {
 	heartFade: { start: 0.035, end: 0.11 },
 	rotateH: { start: 0.1, end: 0.34 },
 	rotateV: { start: 0.34, end: 0.58 },
-	dissection: { start: 0.62, end: 0.82 },
-	fireIn: { start: 0.76, end: 0.88 },
-	fireOut: { start: 0.92, end: 0.96 },
-	ink: { start: 0.90, end: 0.98 },
+	dissection: { start: 0.62, end: 0.80 },  
+	fireIn: { start: 0.74, end: 0.84 },
+	fireOut: { start: 0.86, end: 0.90 }, 
+	ink: { start: 0.84, end: 0.90 },         
 	hudIn: { start: 0.02, end: 0.15 },
 	hudOut: { start: 0.50, end: 0.60 },
-	terminal: { start: 0.9, end: 1.0 }
+	terminal: { start: 0.85, end: 0.95 }
 } as const;
-
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -188,33 +187,26 @@ async function buildSlices(
 	return slices;
 }
 
-// ---------------------------------------------------------------------------
-// High Performance Scroll Evaluator
-// ---------------------------------------------------------------------------
-
 function evaluateScrollState(progress: number): ScrollState {
-	return {
-		progress,
-		heartFade: smoothstep(TIMELINE.heartFade.start, TIMELINE.heartFade.end, progress),
-		rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, progress),
-		rotateVertical: smoothstep(TIMELINE.rotateV.start, TIMELINE.rotateV.end, progress),
-		dissectionProgress: smoothstep(TIMELINE.dissection.start, TIMELINE.dissection.end, progress),
-		fireProgress: smoothstep(TIMELINE.fireIn.start, TIMELINE.fireIn.end, progress) * (1 - smoothstep(TIMELINE.fireOut.start, TIMELINE.fireOut.end, progress)),
-		inkProgress: smoothstep(TIMELINE.ink.start, TIMELINE.ink.end, progress),
-		hudProgress: smoothstep(TIMELINE.hudIn.start, TIMELINE.hudIn.end, progress) * (1 - smoothstep(TIMELINE.hudOut.start, TIMELINE.hudOut.end, progress)),
-		terminalProgress: smoothstep(TIMELINE.terminal.start, TIMELINE.terminal.end, progress),
-	};
+    const p = Math.min(progress, 1.0); 
+    return {
+        progress,                       
+        heartFade: smoothstep(TIMELINE.heartFade.start, TIMELINE.heartFade.end, p),
+        rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, p),
+        rotateVertical: smoothstep(TIMELINE.rotateV.start, TIMELINE.rotateV.end, p),
+        dissectionProgress: smoothstep(TIMELINE.dissection.start, TIMELINE.dissection.end, p),
+        fireProgress: smoothstep(TIMELINE.fireIn.start, TIMELINE.fireIn.end, p) * (1 - smoothstep(TIMELINE.fireOut.start, TIMELINE.fireOut.end, p)),
+        inkProgress: smoothstep(TIMELINE.ink.start, TIMELINE.ink.end, p),
+        hudProgress: smoothstep(TIMELINE.hudIn.start, TIMELINE.hudIn.end, p) * (1 - smoothstep(TIMELINE.hudOut.start, TIMELINE.hudOut.end, p)),
+        terminalProgress: smoothstep(TIMELINE.terminal.start, TIMELINE.terminal.end, p),
+    };
 }
-
-// ---------------------------------------------------------------------------
-// WebGL fire class
-// ---------------------------------------------------------------------------
 
 function createWebGLFireSystem(fireCount = 200) {
 	const geometry = new THREE.BufferGeometry();
 	const positions = new Float32Array(fireCount * 3);
 	const velocities = new Float32Array(fireCount * 3);
-	const lifetimes = new Float32Array(fireCount); // 0.0 to 1.0
+	const lifetimes = new Float32Array(fireCount); 
 	const sizes = new Float32Array(fireCount);
 
 	for (let i = 0; i < fireCount; i++) {
@@ -333,12 +325,113 @@ function createWebGLFireSystem(fireCount = 200) {
 export function setupHeartScene(): LoopController | null {
 	const section = document.querySelector<HTMLElement>('[data-hero]');
 	const canvas = document.querySelector<HTMLCanvasElement>('[data-heart-canvas]');
-	const progressBar = document.querySelector<HTMLElement>('[data-hero-progress]');
+	const progressContainer = document.querySelector<HTMLElement>('.hero-progress');
+	const progressFill = document.querySelector<HTMLElement>('[data-hero-progress]');
 	const depthReadout = document.querySelector<HTMLElement>('[data-depth-readout]');
 	const labels = document.querySelectorAll<HTMLElement>('[data-dimension-label]');
 	const scrollPrompt = document.querySelector<HTMLElement>('[data-scroll-prompt]');
 	const fillAortic = document.querySelector<HTMLElement>('.gel-fill--aortic');
 	const fillVentricle = document.querySelector<HTMLElement>('.gel-fill--ventricle');
+	const borderSvg = document.querySelector<SVGSVGElement>('.hero-border-svg');
+	const borderPaths = document.querySelectorAll<SVGPathElement>('.hero-border-path');
+
+	let pathLength = 0;
+	let pTop = 0;
+	let pBot = 0;
+	let cachedH = 0;
+
+	let audioCtx: AudioContext | null = null;
+    let fireOsc: OscillatorNode | null = null;
+    let fireGain: GainNode | null = null;
+    let inkOsc: OscillatorNode | null = null;
+    let inkGain: GainNode | null = null;
+
+	let crossedDissection = false;
+    let crossedTerminal = false;
+
+	function initSynthEngine() {
+        if (audioCtx) return;
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        audioCtx = new AudioContextClass();
+
+        // Ambient Fire Track: A deep, muffled low-end rumble (Sawtooth + Lowpass)
+        fireOsc = audioCtx.createOscillator();
+        fireGain = audioCtx.createGain();
+        const fireFilter = audioCtx.createBiquadFilter();
+        
+        fireOsc.type = 'sawtooth';
+        fireOsc.frequency.setValueAtTime(45, audioCtx.currentTime); // 45Hz sub-bass
+        fireFilter.type = 'lowpass';
+        fireFilter.frequency.setValueAtTime(90, audioCtx.currentTime); // Cut the harsh high frequencies
+
+        fireOsc.connect(fireFilter);
+        fireFilter.connect(fireGain);
+        fireGain.connect(audioCtx.destination);
+        fireGain.gain.setValueAtTime(0, audioCtx.currentTime); // Start silent
+        fireOsc.start();
+
+        // Ambient Ink Track: A pure, submerged fluid frequency (Sine Wave)
+        inkOsc = audioCtx.createOscillator();
+        inkGain = audioCtx.createGain();
+        
+        inkOsc.type = 'sine';
+        inkOsc.frequency.setValueAtTime(70, audioCtx.currentTime);
+
+        inkOsc.connect(inkGain);
+        inkGain.connect(audioCtx.destination);
+        inkGain.gain.setValueAtTime(0, audioCtx.currentTime); // Start silent
+        inkOsc.start();
+    }
+
+    // Local function to synthesize quick UI chimes/clicks on demand
+    function playUiChime(frequency: number, duration = 0.15) {
+        if (!audioCtx) initSynthEngine();
+        if (audioCtx!.state === 'suspended') audioCtx!.resume();
+
+        const now = audioCtx!.currentTime;
+        const osc = audioCtx!.createOscillator();
+        const gain = audioCtx!.createGain();
+
+        osc.type = 'triangle'; // Gives a clean, tech-focused chime
+        osc.frequency.setValueAtTime(frequency, now);
+
+        // Volume Envelope: Sharp attack, smooth exponential decay to prevent speaker clipping
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+        osc.connect(gain);
+        gain.connect(audioCtx!.destination);
+        osc.start(now);
+        osc.stop(now + duration);
+    }
+
+	function updateBorderLength() {
+		if (borderPaths.length === 2 && borderSvg) {
+			const rect = borderSvg.getBoundingClientRect();
+			const w = rect.width;
+			cachedH = rect.height;
+			
+			borderSvg.setAttribute('viewBox', `0 0 ${w} ${cachedH}`);
+			
+			// 1:1 precise viewport mapping matching the 24px container grid bounds
+			pTop = (window.innerHeight * 0.18) - 24;
+			pBot = (window.innerHeight * 0.82) - 24;
+			
+			// Top path covers scrollbar center to top-right corner, across top, down to left center
+			borderPaths[0].setAttribute('d', `M ${w - 1} ${cachedH / 2} L ${w - 1} 1 L 1 1 L 1 ${cachedH / 2}`);
+			// Bottom path covers scrollbar center to bottom-right corner, across bottom, up to left center
+			borderPaths[1].setAttribute('d', `M ${w - 1} ${cachedH / 2} L ${w - 1} ${cachedH - 1} L 1 ${cachedH - 1} L 1 ${cachedH / 2}`);
+			
+			pathLength = w + cachedH - 4;
+			
+			borderPaths.forEach(path => {
+				path.style.strokeDasharray = `${pathLength}`;
+			});
+		}
+	}
+
+	updateBorderLength();
 
 	if (!section || !canvas) return null;
 
@@ -351,8 +444,8 @@ export function setupHeartScene(): LoopController | null {
 	
 	let targetProgress = 0;
 	let currentProgress = 0;
+	let prevProgress = 0;
 
-    // ─── MOUSE TRACKING STATE ────────────────────────────────────────────────
     const mouse = {
         currentX: 0,
         currentY: 0,
@@ -365,11 +458,6 @@ export function setupHeartScene(): LoopController | null {
         mouse.targetY = -(e.clientY / window.innerHeight) * 2 + 1;
     };
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    // ─────────────────────────────────────────────────────────────────────────
-
-	// ---------------------------------------------------------------------------
-	// Three.js scene setup
-	// ---------------------------------------------------------------------------
 
 	const scene = new THREE.Scene();
 	scene.fog = new THREE.FogExp2(0x020308, 0.035);
@@ -396,7 +484,6 @@ export function setupHeartScene(): LoopController | null {
 		0.9  
 	);
 
-	// ─── WEBGL INK BLEED SHADER ──────────────────────────────────────────────
 	const InkShader = {
 		uniforms: {
 			tDiffuse: { value: null }, 
@@ -499,7 +586,6 @@ export function setupHeartScene(): LoopController | null {
 	blue.position.set(-3, -1.8, 3);
 	scene.add(ambient, key, blue);
 
-	// ─── DARK ATMOSPHERIC BACKGROUND GRID ────────────────────────────────────
 	const gridMaterial = new THREE.ShaderMaterial({
 		uniforms: {
 			uTime: { value: 0 },
@@ -554,10 +640,6 @@ export function setupHeartScene(): LoopController | null {
 	screenGrid.position.z = -15; 
 	scene.add(screenGrid);
 
-	// ---------------------------------------------------------------------------
-	// Slice state
-	// ---------------------------------------------------------------------------
-
 	let slices: SliceHolder[] = [];
 
 	const loader = new GLTFLoader();
@@ -577,31 +659,112 @@ export function setupHeartScene(): LoopController | null {
 		},
 	);
 
-	// ---------------------------------------------------------------------------
-	// HUD update
-	// ---------------------------------------------------------------------------
+	function applyDOMScrollState(state: ScrollState): void {
+        const { progress, heartFade, hudProgress, terminalProgress } = state;
+    
+        const BORDER_START = 0.88;
+        const BORDER_END   = 0.91;
+        const SNAP_OUT     = 0.92; 
+    
+        prevProgress = progress;
+        
+        // ── 1. Progress bar Filling ───────────────────────────────────────────
+        if (progressFill && progressContainer) {
+            const fillPct = Math.min(progress / BORDER_START, 1.0) * 100;
+            progressFill.style.height = `${fillPct}%`;
+        }
 
-    function applyDOMScrollState(state: ScrollState): void {
-		const { progress, heartFade, hudProgress, terminalProgress } = state;
+		// ── 2. Unified Snap Out Math ──────────────────────────────────────────
+		let rectOpacity = 1;
+		let rectScale = 1;
 
-		progressBar?.style.setProperty('height', `${progress * 100}%`);
-		section.style.setProperty('--heart-opacity', String(heartFade));
-		section.style.setProperty('--heart-darkness', String(state.inkProgress));
-		section.style.setProperty('--hud-opacity', String(hudProgress));
+		if (progress >= SNAP_OUT) {
+			const snapProgress = clamp((progress - SNAP_OUT) / 0.02); // Handles the 0.92 -> 0.94 push
+			rectOpacity = 1 - snapProgress;
+			rectScale = 1 + (snapProgress * 0.05); 
+		}
 
-		section.classList.toggle('is-idle', progress < 0.02 && section.classList.contains('is-idle'));
-		if (scrollPrompt && progress > 0.02) scrollPrompt.style.opacity = '0';
-		if (depthReadout) depthReadout.textContent = `${(progress * 100).toFixed(2)}%`;
+		if (progressContainer) {
+			// SB stays completely solid while RCT draws (0.88 -> 0.92)
+			// It vanishes instantly at 0.92 right when the frame closes and explodes outward
+			if (progress < 0.02 || progress >= SNAP_OUT) {
+				progressContainer.style.opacity = '0';
+			} else {
+				progressContainer.style.opacity = '1';
+			}
+			
+			// Applies the outward scale-pop at the exact same frame boundary
+			const pushOutwardX = (rectScale - 1) * 400; 
+			progressContainer.style.transform = `translate3d(${pushOutwardX}px, 0, 0) scale(${rectScale})`;
+		}
+		// ── 3. SVG border drawing & Scaling (With Pre-filled Scrollbar Segment) ──
+        if (borderPaths.length === 2 && borderSvg) {
+			const topScrollbarLength = (cachedH / 2) - pTop;
+			const botScrollbarLength = pBot - (cachedH / 2);
 
-		if (fillAortic) fillAortic.style.width = `${lerp(15, 92, progress)}%`;
-		if (fillVentricle) fillVentricle.style.width = `${lerp(80, 25, progress)}%`;
-
-		section.classList.toggle('is-terminal', terminalProgress > 0.35);
-	}
-
-	// ---------------------------------------------------------------------------
-	// Layout Caching / Resize Handler
-	// ---------------------------------------------------------------------------
+            if (progress < BORDER_START) {
+                borderSvg.style.opacity = '0';
+                // Hold the scrollbar area pre-filled but invisible until BORDER_START
+				borderPaths[0].style.strokeDashoffset = `${pathLength - topScrollbarLength}`;
+				borderPaths[1].style.strokeDashoffset = `${pathLength - botScrollbarLength}`;
+                borderSvg.style.transform = `scale(1)`;
+                borderSvg.classList.remove('is-snapped');
+            } else if (progress < BORDER_END) {
+                // Drawing phase: Shoot outward perfectly from the top and bottom tips of the scrollbar
+                borderSvg.style.opacity = '1';
+                borderSvg.style.transform = `scale(1)`;
+                const drawProgress = (progress - BORDER_START) / (BORDER_END - BORDER_START);
+                
+				borderPaths[0].style.strokeDashoffset = `${(pathLength - topScrollbarLength) * (1 - drawProgress)}`;
+				borderPaths[1].style.strokeDashoffset = `${(pathLength - botScrollbarLength) * (1 - drawProgress)}`;
+                borderSvg.classList.remove('is-snapped');
+            } else {
+                // Fully drawn loop: No chunk missing when progress bar vanishes!
+                borderSvg.style.opacity = String(rectOpacity);
+                borderSvg.style.transform = `scale(${rectScale})`;
+                borderPaths[0].style.strokeDashoffset = '0';
+                borderPaths[1].style.strokeDashoffset = '0';
+                
+                if (progress < SNAP_OUT) {
+                    borderSvg.classList.add('is-snapped');
+                } else {
+                    borderSvg.classList.remove('is-snapped');
+                }
+            }
+        }
+    
+        // ── 4. Existing DOM updates ───────────────────────────────────────────
+        section.style.setProperty('--heart-opacity', String(heartFade));
+        section.style.setProperty('--heart-darkness', String(state.inkProgress));
+        section.style.setProperty('--hud-opacity', String(hudProgress));
+    
+        section.classList.toggle('is-idle', progress < 0.02 && section.classList.contains('is-idle'));
+        if (scrollPrompt && progress > 0.02) scrollPrompt.style.opacity = '0';
+        if (depthReadout) depthReadout.textContent = `${(progress * 100).toFixed(2)}%`;
+    
+        if (fillAortic)   fillAortic.style.width   = `${lerp(15, 92, progress)}%`;
+        if (fillVentricle) fillVentricle.style.width = `${lerp(80, 25, progress)}%`;
+    
+        section.classList.toggle('is-terminal', terminalProgress > 0.35);
+    
+        // ── 5. Typography Sequence ────────────────────────────────────────────
+        const heroCopyEl = document.querySelector<HTMLElement>('[data-hero-copy]');
+        const lineOne = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--one');
+        const lineTwo = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--two');
+    
+        if (heroCopyEl && lineOne && lineTwo) {
+            heroCopyEl.style.opacity = progress >= SNAP_OUT ? '1' : '0';
+            
+            lineOne.style.opacity = String(
+                smoothstep(0.92, 0.94, progress) *
+                (1 - smoothstep(0.95, 0.97, progress))
+            );
+            
+            lineTwo.style.opacity = String(
+                smoothstep(0.975, 0.995, progress)
+            );
+        }
+    }
 
 	function handleResize(): void {
 		const w = canvas.clientWidth;
@@ -614,16 +777,14 @@ export function setupHeartScene(): LoopController | null {
 		const rect = section.getBoundingClientRect();
 		cachedSectionTop = rect.top + window.scrollY;
 		cachedScrollableRange = section.offsetHeight - window.innerHeight;
+		updateBorderLength();
+
 		calculateTargetProgress();
     }
 
 	function calculateTargetProgress(): void {
-		targetProgress = clamp((window.scrollY - cachedSectionTop) / Math.max(cachedScrollableRange, 1));
+		targetProgress = Math.max(0, (window.scrollY - cachedSectionTop) / Math.max(cachedScrollableRange, 1));
 	}
-
-	// ---------------------------------------------------------------------------
-	// Main render loop
-	// ---------------------------------------------------------------------------
 
     const render = (time: number): void => {
         currentProgress = lerp(currentProgress, targetProgress, SCROLL_DAMPING);
@@ -637,25 +798,19 @@ export function setupHeartScene(): LoopController | null {
 
         const { rotateHorizontal, rotateVertical, dissectionProgress, heartFade, fireProgress, inkProgress, progress } = state;
 
-        // 1. Heart Model Transformations
         heartGroup.rotation.y = rotateHorizontal * Math.PI * 2 + Math.sin(time * 0.00022) * 0.035 * heartFade;
         heartGroup.rotation.x = -0.08 + rotateVertical * Math.PI * 2;
         heartGroup.rotation.z = lerp(0, -0.03, rotateVertical);
         camera.position.z = lerp(6.9, 8.45, dissectionProgress);
 
-        // ─── CINEMATIC MOUSE PARALLAX ──────────────────────────────────────
         mouse.currentX = lerp(mouse.currentX, mouse.targetX, 0.05);
         mouse.currentY = lerp(mouse.currentY, mouse.targetY, 0.05);
 
         camera.position.x = mouse.currentX * 0.4;
-        // Combine the scroll-driven Y movement with the parallax Y movement
         camera.position.y = lerp(0.02, -0.03, dissectionProgress) + mouse.currentY * 0.4;
         
-        // Force the camera lens to stay perfectly centered on the scene
         camera.lookAt(0, 0, 0);
-        // ───────────────────────────────────────────────────────────────────
 
-        // 2. Dissection Spacing
         slices.forEach((slice, i) => {
             const direction = slice.userData.direction ?? i - 2;
             const eased = 1 - Math.pow(1 - dissectionProgress, 3);
@@ -663,7 +818,6 @@ export function setupHeartScene(): LoopController | null {
             slice.position.z = Math.abs(direction) * eased * 0.04;
         });
 
-        // 3. Slice Illumination
         const lightPhase = smoothstep(0.40, 0.72, progress) * (1 - smoothstep(0.92, 0.98, progress));
         slices.forEach((slice, i) => {
             const { materials } = slice.userData;
@@ -679,7 +833,6 @@ export function setupHeartScene(): LoopController | null {
             materials.edges.opacity = lerp(0.22, 0.9, sliceLight);
         });
 
-        // 4. Perfect 3D-to-2D Label Tracking (Alternating Sides)
         scene.updateMatrixWorld(true);
 
         labels.forEach((label, i) => {
@@ -719,16 +872,13 @@ export function setupHeartScene(): LoopController | null {
             label.style.transform = `translate3d(calc(${x + slideX}px + ${alignOffset}), calc(${y}px - 50%), 0)`;
         });
 
-		// 5. Update WebGL Fire Particles
         fireSystem.update(time, fireProgress);
 
-        // 6. Update Custom Post-Processing Shaders
         inkPass.uniforms.uTime.value = time * 0.001;
         inkPass.uniforms.uProgress.value = smoothstep(0.0, 1.0, inkProgress);
         inkPass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
 		gridMaterial.uniforms.uTime.value = time * 0.001;
 
-        // 7. Render entire scene through the Composer
         composer.render();
     };
 
@@ -745,7 +895,7 @@ export function setupHeartScene(): LoopController | null {
 			controller.destroy();
 			window.removeEventListener('scroll', calculateTargetProgress);
 			window.removeEventListener('resize', handleResize);
-            window.removeEventListener('mousemove', handleMouseMove); // NEW: Prevent memory leaks
+            window.removeEventListener('mousemove', handleMouseMove); 
 			renderer.dispose();
 			scene.traverse((obj) => {
 				if (obj instanceof THREE.Mesh) {
