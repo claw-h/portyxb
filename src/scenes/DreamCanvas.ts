@@ -112,10 +112,24 @@ const CustomLensShader = {
 			float caDynamic = (abs(uVelocity) * 0.0025) + (uMouseSpeed * 0.0012);
 			float caAmount = caBase + caDynamic;
  
-			float r = texture2D(tDiffuse, center + (finalUv - center) * (1.0 - caAmount)).r;
-			float g = texture2D(tDiffuse, finalUv).g;
-			float b = texture2D(tDiffuse, center + (finalUv - center) * (1.0 + caAmount)).b;
-			vec3 finalColor = vec3(r, g, b);
+			// ── NEW: SCROLL-DRIVEN DIRECTIONAL MOTION BLUR ──
+			vec3 finalColor = vec3(0.0);
+			float blurSamples = 5.0;
+			// uVelocity defines how far the pixels stretch vertically
+			float blurStrength = uVelocity * 0.0004; 
+			
+			for(float i = -2.0; i <= 2.0; i++) {
+				// Offset the UV strictly on the Y axis
+				vec2 offsetUv = finalUv + vec2(0.0, i * blurStrength);
+				
+				// Apply your existing Chromatic Aberration to the blurred layers
+				float r = texture2D(tDiffuse, center + (offsetUv - center) * (1.0 - caAmount)).r;
+				float g = texture2D(tDiffuse, offsetUv).g;
+				float b = texture2D(tDiffuse, center + (offsetUv - center) * (1.0 + caAmount)).b;
+				
+				finalColor += vec3(r, g, b);
+			}
+			finalColor /= blurSamples; // Average the 5 layers together
  
 			float vignette = smoothstep(1.0, 0.75, normDist);
 			finalColor *= vignette * edgeFade;
@@ -133,6 +147,7 @@ function buildGlyphs(width: number, height: number, previousGlyphs?: Glyph[]): G
 	const offscreen = new OffscreenCanvas(width, 200);
 	const octx = offscreen.getContext('2d')!;
 	octx.font = GLYPH_FONT;
+	octx.letterSpacing = '8px';
 	
 	const words = DECLARATION.split(' ');
 	const maxLineWidth = Math.min(width * 0.80, 860);
@@ -432,6 +447,9 @@ function drawOffscreenGlyphs(
 ): number {
 	ctx.textBaseline = 'alphabetic';
 	ctx.font = GLYPH_FONT;
+
+	ctx.letterSpacing = '8px';
+
 	const absVel = Math.abs(scrollVelocity);
  
 	const REVEAL_END = 0.75;
@@ -566,7 +584,7 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 	const composer = new EffectComposer(renderer);
 	composer.addPass(new RenderPass(scene, camera));
 
-	const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.23, 0.7, 0.3);
+	const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.18, 0.5, 0.28);
 	composer.addPass(bloomPass);
 
 	const lensPass = new ShaderPass(CustomLensShader);
@@ -672,7 +690,11 @@ const render = (time: number): void => {
 
 		if (isRevealing || pointerActive || absVel > 0.5 || frameNeedsGlyphRedraw) {
 			bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-			bctx.clearRect(0, 0, width, height);
+
+			bctx.globalCompositeOperation = 'destination-out';
+			bctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+			bctx.fillRect(0, 0, width, height);
+			bctx.globalCompositeOperation = 'source-over';
 
 			const maxGlyphSpeed = drawOffscreenGlyphs(bctx, glyphs, mouse, scrollProgress, scrollVelocity, time, prefersReducedMotion);
 			activeTexture.needsUpdate = true;
