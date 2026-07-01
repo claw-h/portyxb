@@ -50,10 +50,10 @@ const STAIR_ROTATION = new THREE.Euler(0.4, -0.4, -0.14);
 // ---------------------------------------------------------------------------
 // Viewport Scroll Math
 // ---------------------------------------------------------------------------
-function calcScrollProgress(section: HTMLElement): number {
-	const rect = section.getBoundingClientRect();
+function calcScrollProgress(sectionTop: number, sectionHeight: number): number {
 	const vh = window.innerHeight;
-	return clamp(1 - rect.bottom / (vh + rect.height), 0, 1);
+	const bottom = sectionTop + sectionHeight - window.scrollY;
+	return clamp(1 - bottom / (vh + sectionHeight), 0, 1);
 }
  
 // ---------------------------------------------------------------------------
@@ -129,7 +129,7 @@ const CustomLensShader = {
 // Glyph Builder & Geometry Loaders
 // ---------------------------------------------------------------------------
  
-function buildGlyphs(width: number, height: number): Glyph[] {
+function buildGlyphs(width: number, height: number, previousGlyphs?: Glyph[]): Glyph[] {
 	const offscreen = new OffscreenCanvas(width, 200);
 	const octx = offscreen.getContext('2d')!;
 	octx.font = GLYPH_FONT;
@@ -164,10 +164,14 @@ function buildGlyphs(width: number, height: number): Glyph[] {
 		for (const char of line) {
 			const charW = octx.measureText(char).width;
 			if (char !== ' ') {
+				const prev = previousGlyphs?.[globalIndex];
 				glyphs.push({
 					char, restX: cx + charW / 2, restY: startY + li * GLYPH_LINE_HEIGHT,
-					x: Math.random() * width, y: Math.random() * height,
-					vx: 0, vy: 0, phase: Math.random() * Math.PI * 2, revealT: 0, index: globalIndex++,
+					x: prev ? prev.x : Math.random() * width,
+					y: prev ? prev.y : Math.random() * height,
+					vx: prev ? prev.vx : 0, vy: prev ? prev.vy : 0,
+					phase: prev ? prev.phase : Math.random() * Math.PI * 2,
+					revealT: prev ? prev.revealT : 0, index: globalIndex++,
 				});
 			}
 			cx += charW;
@@ -482,13 +486,11 @@ function drawOffscreenGlyphs(
 		const velDim = clamp(absVel * 0.022, 0, 0.30);
 		const finalAlpha = clamp((1.0 + proximityAlphaBoost - velDim) * glyph.revealT, 0, 1);
  
-		ctx.shadowBlur = 0; 
-		ctx.fillStyle = `rgba(180, 200, 230, ${finalAlpha * 0.8})`;
-		ctx.fillText(glyph.char, glyph.x, glyph.y);
- 
-		ctx.shadowBlur = 0;
+		ctx.shadowBlur = 6;
+		ctx.shadowColor = 'rgba(140, 170, 220, 0.6)';
 		ctx.fillStyle = `rgba(240, 250, 255, ${finalAlpha})`;
 		ctx.fillText(glyph.char, glyph.x, glyph.y);
+ 
 	});
  
 	return maxGlyphSpeed;
@@ -524,8 +526,7 @@ const initHeavyLifting = async () => {
 	const bctx = bufferCanvas.getContext('2d');
 	if (!bctx) return;
 
-	const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: true });
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: false, powerPreference: 'high-performance' });	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 	const scene = new THREE.Scene();
 	scene.background = new THREE.Color(0x000000);
@@ -579,6 +580,47 @@ const initHeavyLifting = async () => {
 	let lastHeight = initialHeight;
 	let frameNeedsGlyphRedraw = true;
 
+	function applyResize(width: number, height: number): void {
+		const rdpr = Math.min(window.devicePixelRatio, 2);
+
+		bufferCanvas.width = width * rdpr;
+		bufferCanvas.height = height * rdpr;
+
+		renderer.setSize(width, height, false);
+		composer.setSize(width, height);
+		lensPass.uniforms.uResolution.value.set(width * rdpr, height * rdpr);
+
+		camera.aspect = width / height;
+		camera.updateProjectionMatrix();
+
+		const resizedVFov = (camera.fov * Math.PI) / 180;
+		const resizedPlaneHeight = 2 * Math.tan(resizedVFov / 2) * dist;
+		textPlane.scale.set((resizedPlaneHeight * camera.aspect) / 10, resizedPlaneHeight / 10, 1);
+
+		activeTexture.dispose();
+		activeTexture = new THREE.CanvasTexture(bufferCanvas);
+		activeTexture.minFilter = THREE.LinearFilter;
+		activeTexture.magFilter = THREE.LinearFilter;
+
+		textMaterial.map = activeTexture;
+		textMaterial.needsUpdate = true;
+
+		glyphs = buildGlyphs(width, height, glyphs);
+
+		lastWidth = width;
+		lastHeight = height;
+		frameNeedsGlyphRedraw = true;
+	}
+
+	const resizeObserver = new ResizeObserver((entries) => {
+		const entry = entries[0];
+		if (!entry) return;
+		const w = Math.floor(entry.contentRect.width);
+		const h = Math.floor(entry.contentRect.height);
+		if (w !== lastWidth || h !== lastHeight) applyResize(w, h);
+	});
+	resizeObserver.observe(outputCanvas);
+
 	renderer.compile(scene, camera);
 	composer.render();
 
@@ -586,57 +628,33 @@ const initHeavyLifting = async () => {
 	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	const mouse: MouseState = { nx: 0.5, ny: 0.5, cx: 0, cy: 0, speed: 0, prevCx: 0, prevCy: 0, vx: 0, vy: 0 };
 
-	let sectionRect = sectionEl.getBoundingClientRect();
+let sectionRect = sectionEl.getBoundingClientRect();
+	const sectionMetrics = { top: sectionEl.offsetTop, height: sectionEl.offsetHeight };
 
 	function onMouseMove(e: MouseEvent): void {
+		// clientX/Y and bounding client rect are both viewport-relative, 
+		// so this math is perfectly self-contained. No scroll offsets needed!
 		mouse.nx = (e.clientX - sectionRect.left) / Math.max(sectionRect.width, 1);
-		mouse.ny = (e.clientY - sectionRect.top + window.scrollY - sectionEl.offsetTop) / Math.max(sectionRect.height, 1);
+		mouse.ny = (e.clientY - sectionRect.top) / Math.max(sectionRect.height, 1);
 	}
 
-	function onResize(): void { sectionRect = sectionEl.getBoundingClientRect(); }
+	function onResize(): void {
+		sectionRect = sectionEl.getBoundingClientRect();
+		sectionMetrics.top = sectionEl.offsetTop;
+		sectionMetrics.height = sectionEl.offsetHeight;
+	}
 
 	if (hasFinePointer) sectionEl.addEventListener('mousemove', onMouseMove);
 	window.addEventListener('resize', onResize);
 
-	const render = (time: number): void => {
+const render = (time: number): void => {
 		if (!isVisible) return;
 
-		const width = Math.floor(outputCanvas.clientWidth);
-		const height = Math.floor(outputCanvas.clientHeight);
+		const width = lastWidth;
+		const height = lastHeight;
 		const dpr = Math.min(window.devicePixelRatio, 2);
 
-		if (width !== lastWidth || height !== lastHeight) {
-			bufferCanvas.width = width * dpr;
-			bufferCanvas.height = height * dpr;
-
-			renderer.setSize(width, height, false);
-			composer.setSize(width, height);
-			lensPass.uniforms.uResolution.value.set(width * dpr, height * dpr);
-
-			camera.aspect = width / height;
-			camera.updateProjectionMatrix();
-
-			const resizedVFov = (camera.fov * Math.PI) / 180;
-			const resizedPlaneHeight = 2 * Math.tan(resizedVFov / 2) * dist;
-			textPlane.scale.set((resizedPlaneHeight * camera.aspect) / 10, resizedPlaneHeight / 10, 1);
-
-			activeTexture.dispose();
-			activeTexture = new THREE.CanvasTexture(bufferCanvas);
-			activeTexture.minFilter = THREE.LinearFilter;
-			activeTexture.magFilter = THREE.LinearFilter;
-
-			textMaterial.map = activeTexture;
-			textMaterial.needsUpdate = true;
-
-			glyphs = buildGlyphs(width, height);
-
-			lastWidth = width;
-			lastHeight = height;
-			frameNeedsGlyphRedraw = true;
-		}
-
-		const scrollProgress = calcScrollProgress(section);
-		const scrollVelocity = _lenisVelocity;
+		const scrollProgress = calcScrollProgress(sectionMetrics.top, sectionMetrics.height);		const scrollVelocity = _lenisVelocity;
 		const absVel = Math.abs(scrollVelocity);
 
 		mouse.cx = mouse.nx * width;
@@ -680,7 +698,7 @@ const initHeavyLifting = async () => {
 
 			if (inst.ix === 0) {
 				// Easing curve: Starts at 5% scroll, ends at 35%
-				const beamProgress = smoothstep(0.08, 0.45, scrollProgress);
+				const beamProgress = smoothstep(0.08, 0.6, scrollProgress);
 				
 				// Pull it from the deep horizon
 				currentZ += lerp(-150, 0, beamProgress);
@@ -705,7 +723,7 @@ const initHeavyLifting = async () => {
 			const zScale = Math.abs(inst.wireScale) * stretchZ; 
 			
 			inst.mesh.scale.set(xScale, yScale, zScale);
-			inst.mesh.scale.set(xScale, yScale, yScale);
+			
 			inst.mesh.updateMatrix();
 		});
 
@@ -738,11 +756,14 @@ const initHeavyLifting = async () => {
 	releaseResources = () => {
 		if (hasFinePointer) section.removeEventListener('mousemove', onMouseMove);
 		window.removeEventListener('resize', onResize);
+		resizeObserver.disconnect();
 
 		textPlane.geometry.dispose();
 		textMaterial.dispose();
 		baseGeometry.dispose();
 		activeTexture.dispose();
+		crtGeometry.dispose();
+		crtMaterial.dispose();
 		composer.dispose();
 		renderer.dispose();
 	};
