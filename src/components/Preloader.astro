@@ -1,3 +1,4 @@
+
 ---
 // Retrofuturistic Gravity Falls-inspired preloader (WebGL + Spherical CRT)
 ---
@@ -359,6 +360,7 @@
 
 <script>
 	document.addEventListener('DOMContentLoaded', () => {
+		
 		const progressBar = document.querySelector('[data-preloader-progress]') as HTMLElement;
 		const percentText = document.querySelector('[data-preloader-percent]') as HTMLElement;
 		const statusText = document.querySelector('.preloader-label .preloader-text') as HTMLElement;
@@ -367,17 +369,10 @@
 
 		if (!progressBar || !percentText || !statusText || !shell || !crtDisplay) return;
 
-		// ── ALL MASTER SITE ASSETS TO WARM UP CACHE ──
-		const assetsToPreload = [
-			'/staircase.glb', // Dream scene 3D architecture
-			'/heart.glb',     // Hero scene 3D heart model
-			// If you use any specific heavy environmental textures or audio files, add them here:
-			// '/textures/phosphor_grid.png',
-		];
-
-		let loadedCount = 0;
+		let currentProgress = 0;
 		let displayProgress = 0;
 		let targetProgress = 0;
+		let hasCompleted = false;
 
 		// Status messages to cycles through to look cool while caching
 		const systemNodes = [
@@ -399,52 +394,55 @@
 		const progressTicker = setInterval(() => {
 			// Smoothly slide progress toward target
 			displayProgress += (targetProgress - displayProgress) * 0.08;
+			currentProgress = displayProgress;
 			const currentPercent = Math.floor(displayProgress);
 			
 			progressBar.style.width = `${displayProgress}%`;
 			percentText.textContent = `${currentPercent}%`;
-
-			// Once fonts are ready and assets hit 100%, close out
-			if (currentPercent >= 99) {
-				clearInterval(progressTicker);
-				clearInterval(statusInterval);
-				completeLoading();
-			}
 		}, 16);
+// ... (keep your dom element selectors and smooth easing loop) ...
+document.fonts.ready.then(() => {
+        const state = (window as any).__NEURAL_STATE;
+        if (state) state.fontsReady = true;
+    });
 
-		// 2. Parallel Loading Engine
-		if (assetsToPreload.length > 0) {
-			// Include Font API loading into the progress calculation tracking
-			const totalItems = assetsToPreload.length + 1;
+    // 3. The New Pull Loop (Replaces THREE.DefaultLoadingManager)
+    function pollNeuralState() {
+        const state = (window as any).__NEURAL_STATE;
+        
+        if (!state) {
+            requestAnimationFrame(pollNeuralState);
+            return;
+        }
 
-			// Track Custom Font file loading
-			document.fonts.ready.then(() => {
-				loadedCount++;
-				targetProgress = (loadedCount / totalItems) * 100;
-			});
+		const isReadyToRelease = Boolean(state.modelsReady && state.fontsReady && state.heartRenderReady);
 
-			// Track 3D Models and Binary Assets
-			assetsToPreload.forEach((url) => {
-				fetch(url, { cache: 'force-cache' })
-					.then((res) => {
-						if (!res.ok) throw new Error(`HTTP ${res.status}`);
-						loadedCount++;
-						targetProgress = (loadedCount / totalItems) * 100;
-					})
-					.catch((err) => {
-						console.warn(`Preloader bypassed failed node [${url}]:`, err);
-						// Advance progress anyway so the site never soft-locks for visitors
-						loadedCount++;
-						targetProgress = (loadedCount / totalItems) * 100;
-					});
-			});
-		} else {
-			// Fallback if array is cleared
-			document.fonts.ready.then(() => { targetProgress = 100; });
-		}
+		// Never allow the bar to hit 100 before render warmup is done.
+		let progressLimit = 90;
+		if (state.fontsReady) progressLimit = 99;
+		if (isReadyToRelease) progressLimit = 100;
+        
+        // Feed YOUR existing targetProgress variable
+        targetProgress = Math.min(state.targetProgress || 0, progressLimit);
 
-		// 3. System Collapse Animation
+		// Check for completion using your easing variable (currentProgress)
+		if (isReadyToRelease && currentProgress >= 99.5 && !hasCompleted) {
+            // Trigger YOUR exact system collapse sequence
+            completeLoading(); 
+            return; // Kill this polling loop
+        }
+
+        requestAnimationFrame(pollNeuralState);
+    }
+
+    // Start the state poller
+    requestAnimationFrame(pollNeuralState);		// 3. System Collapse Animation
 		function completeLoading() {
+			if (hasCompleted) return;
+			hasCompleted = true;
+			clearInterval(progressTicker);
+			clearInterval(statusInterval);
+
 			progressBar.style.width = '100%';
 			percentText.textContent = '100%';
 			statusText.textContent = 'NEURAL CORES SECURE';

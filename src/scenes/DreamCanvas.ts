@@ -30,6 +30,7 @@ interface MouseState {
  
 let _lenisVelocity = 0;
 let _scrollProgress = 0;
+let _visualScrollProgress = 0;
  
 export function setDreamScrollVelocity(v: number): void { _lenisVelocity = v; }
 export function setDreamScrollProgress(p: number): void { _scrollProgress = clamp(p, 0, 1); }
@@ -672,7 +673,15 @@ const render = (time: number): void => {
 		const height = lastHeight;
 		const dpr = Math.min(window.devicePixelRatio, 2);
 
-		const scrollProgress = calcScrollProgress(sectionMetrics.top, sectionMetrics.height);		const scrollVelocity = _lenisVelocity;
+		// 1. Calculate where the user ACTUALLY is (the target)
+		const targetScrollProgress = calcScrollProgress(sectionMetrics.top, sectionMetrics.height);
+		
+		// 2. Smoothly glide the visual state toward the target (0.08 is the friction/tension)
+		_visualScrollProgress = lerp(_visualScrollProgress, targetScrollProgress, 0.08);
+		
+		// 3. Hand the smoothed value to the rest of your math
+		const scrollProgress = _visualScrollProgress;
+		const scrollVelocity = _lenisVelocity;
 		const absVel = Math.abs(scrollVelocity);
 
 		mouse.cx = mouse.nx * width;

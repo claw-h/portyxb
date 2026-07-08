@@ -639,8 +639,25 @@ export function setupHeartScene(): LoopController | null {
 	const screenGrid = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), gridMaterial);
 	screenGrid.position.z = -15; 
 	scene.add(screenGrid);
+let slices: SliceHolder[] = [];
 
-	let slices: SliceHolder[] = [];
+	// ---------------------------------------------------------
+	// NEW PULL ARCHITECTURE: Write directly to global state
+	// ---------------------------------------------------------
+	THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+		const state = (window as any).__NEURAL_STATE;
+		if (state) {
+			state.targetProgress = (itemsLoaded / itemsTotal) * 100;
+		}
+	};
+
+	THREE.DefaultLoadingManager.onLoad = () => {
+		const state = (window as any).__NEURAL_STATE;
+		if (state) {
+			state.targetProgress = 100;
+			state.modelsReady = true;
+		}
+	};
 
 	const loader = new GLTFLoader();
 	loader.load(
@@ -648,6 +665,10 @@ export function setupHeartScene(): LoopController | null {
 		async (gltf) => {
 			slices = await buildSlices(mergeModelGeometry(gltf.scene), heartGroup);
 			renderer.compile(scene, camera);
+			const state = (window as any).__NEURAL_STATE;
+			if (state) {
+				state.heartRenderReady = true;
+			}
 		},
 		undefined,
 		async () => {
@@ -656,6 +677,10 @@ export function setupHeartScene(): LoopController | null {
 			slices = await buildSlices([fallback], heartGroup);
 			fallback.dispose(); 
 			renderer.compile(scene, camera);
+			const state = (window as any).__NEURAL_STATE;
+			if (state) {
+				state.heartRenderReady = true;
+			}
 		},
 	);
 

@@ -160,20 +160,37 @@ const projects = [
      This block only bootstraps and wires cleanup.
 ════════════════════════════════════════════ -->
 <script>
-	import { setupHeartScene }     from '../scenes/HeartScene';
-	import { setupDreamCanvas, setDreamScrollVelocity } from '../scenes/DreamCanvas';
+	import { setupDreamCanvas, setDreamScrollVelocity, setDreamScrollProgress } from '../scenes/DreamCanvas';
 	import { setupVoidCanvas }     from '../scenes/VoidCanvas';
 	import { setupCursor }         from '../controllers/CursorController';
 	import { setupHeroCopyReveal, setupWorkReveal } from '../controllers/ScrollReveal';
+	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
 	
 	// Boot all systems
-	const heart      = setupHeartScene();
 	const dream      = setupDreamCanvas();
 	const void_      = setupVoidCanvas();
 	const cursor     = setupCursor();
 	const heroCopy   = setupHeroCopyReveal();
 	const workReveal = setupWorkReveal();
+	let active3DScene: LoopController | null = null;
+	let isInitializing = false; // Add this guard flag
+
+    async function init3DSystem() {
+		if (isInitializing || active3DScene) return;
+
+		isInitializing = true;
+        try {
+            const { setupHeartScene } = await import('../scenes/HeartScene');
+            
+            // setupHeartScene returns your controller (with the destroy method)
+            // Save it to the variable above!
+            active3DScene = setupHeartScene();
+            
+        } catch (error) {
+            console.error("Failed to load 3D engine:", error);
+        }
+    }	init3DSystem();
 
 	// 2. Initialize Lenis to prevent scrolling too fast
     const lenis = new Lenis({
@@ -183,8 +200,10 @@ const projects = [
     });
 
 	// 3. Feed real-time Lenis scroll velocity into DreamCanvas
-	lenis.on('scroll', (e: { velocity: number }) => {
+	lenis.on('scroll', (e: { velocity: number; progress: number;}) => {
 		setDreamScrollVelocity(e.velocity);
+		setDreamScrollProgress(e.progress); 
+		
 	});
 
     // 4. Mount Lenis to the browser's requestAnimationFrame
@@ -196,7 +215,7 @@ const projects = [
 
 	// Unified cleanup for view transitions / HMR
 	const destroy = (): void => {
-		heart?.destroy();
+		active3DScene?.destroy();
 		dream?.destroy();
 		void_?.destroy();
 		cursor?.destroy();
