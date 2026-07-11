@@ -1,4 +1,3 @@
-
 ---
 // Retrofuturistic Gravity Falls-inspired preloader (WebGL + Spherical CRT)
 ---
@@ -359,6 +358,8 @@
 </style>
 
 <script>
+	import { onProgress, onReady } from '../utils/loadState';
+
 	document.addEventListener('DOMContentLoaded', () => {
 		
 		const progressBar = document.querySelector('[data-preloader-progress]') as HTMLElement;
@@ -369,7 +370,6 @@
 
 		if (!progressBar || !percentText || !statusText || !shell || !crtDisplay) return;
 
-		let currentProgress = 0;
 		let displayProgress = 0;
 		let targetProgress = 0;
 		let hasCompleted = false;
@@ -390,53 +390,28 @@
 			}
 		}, 600);
 
-		// 1. Smooth Easing Loop for the Bar
+		// Smooth easing loop for the bar — this is purely cosmetic
+		// interpolation between real progress values, not simulated progress.
 		const progressTicker = setInterval(() => {
-			// Smoothly slide progress toward target
 			displayProgress += (targetProgress - displayProgress) * 0.08;
-			currentProgress = displayProgress;
 			const currentPercent = Math.floor(displayProgress);
 			
 			progressBar.style.width = `${displayProgress}%`;
 			percentText.textContent = `${currentPercent}%`;
 		}, 16);
-// ... (keep your dom element selectors and smooth easing loop) ...
-document.fonts.ready.then(() => {
-        const state = (window as any).__NEURAL_STATE;
-        if (state) state.fontsReady = true;
-    });
 
-    // 3. The New Pull Loop (Replaces THREE.DefaultLoadingManager)
-    function pollNeuralState() {
-        const state = (window as any).__NEURAL_STATE;
-        
-        if (!state) {
-            requestAnimationFrame(pollNeuralState);
-            return;
-        }
+		// Real readiness, fed by whichever site systems have actually
+		// finished loading (fonts, the heart scene, the dream/staircase
+		// scene, a minimum splash floor) — see src/utils/loadState.ts.
+		// No polling, no global, no queue that can drain early.
+		onProgress((percent) => {
+			targetProgress = percent;
+		});
 
-		const isReadyToRelease = Boolean(state.modelsReady && state.fontsReady && state.heartRenderReady);
+		onReady(() => {
+			completeLoading();
+		});
 
-		// Never allow the bar to hit 100 before render warmup is done.
-		let progressLimit = 90;
-		if (state.fontsReady) progressLimit = 99;
-		if (isReadyToRelease) progressLimit = 100;
-        
-        // Feed YOUR existing targetProgress variable
-        targetProgress = Math.min(state.targetProgress || 0, progressLimit);
-
-		// Check for completion using your easing variable (currentProgress)
-		if (isReadyToRelease && currentProgress >= 99.5 && !hasCompleted) {
-            // Trigger YOUR exact system collapse sequence
-            completeLoading(); 
-            return; // Kill this polling loop
-        }
-
-        requestAnimationFrame(pollNeuralState);
-    }
-
-    // Start the state poller
-    requestAnimationFrame(pollNeuralState);		// 3. System Collapse Animation
 		function completeLoading() {
 			if (hasCompleted) return;
 			hasCompleted = true;

@@ -7,6 +7,8 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { clamp, lerp, smoothstep } from '../utils/math';
 import { createLoopController } from '../utils/canvas';
 import type { LoopController } from '../utils/canvas';
+import { markReady } from '../utils/loadState.ts';
+import { setHoverTarget } from '../utils/hoverTargets';
 
 // ---------------------------------------------------------------------------
 // Types & Constants
@@ -191,8 +193,7 @@ function evaluateScrollState(progress: number): ScrollState {
     const p = Math.min(progress, 1.0); 
     return {
         progress,                       
-        heartFade: smoothstep(TIMELINE.heartFade.start, TIMELINE.heartFade.end, p),
-        rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, p),
+		heartFade: Math.max(0.001, smoothstep(TIMELINE.heartFade.start, TIMELINE.heartFade.end, p)),        rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, p),
         rotateVertical: smoothstep(TIMELINE.rotateV.start, TIMELINE.rotateV.end, p),
         dissectionProgress: smoothstep(TIMELINE.dissection.start, TIMELINE.dissection.end, p),
         fireProgress: smoothstep(TIMELINE.fireIn.start, TIMELINE.fireIn.end, p) * (1 - smoothstep(TIMELINE.fireOut.start, TIMELINE.fireOut.end, p)),
@@ -433,7 +434,10 @@ export function setupHeartScene(): LoopController | null {
 
 	updateBorderLength();
 
-	if (!section || !canvas) return null;
+	if (!section || !canvas) {
+		markReady('heart');
+		return null;
+	}
 
 	window.setTimeout(() => {
 		if (window.scrollY < 8) section.classList.add('is-idle');
@@ -458,6 +462,13 @@ export function setupHeartScene(): LoopController | null {
         mouse.targetY = -(e.clientY / window.innerHeight) * 2 + 1;
     };
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
+
+    // Reticle hover detection — raycast against the heart's solid slice
+    // meshes each frame and report hits to the shared hover registry. The
+    // cursor controller listens there; it has no idea this scene exists.
+    const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
+    const heartRaycaster = new THREE.Raycaster();
+    const heartPointerNdc = new THREE.Vector2();
 
 	const scene = new THREE.Scene();
 	scene.fog = new THREE.FogExp2(0x020308, 0.035);
@@ -641,34 +652,17 @@ export function setupHeartScene(): LoopController | null {
 	scene.add(screenGrid);
 let slices: SliceHolder[] = [];
 
-	// ---------------------------------------------------------
-	// NEW PULL ARCHITECTURE: Write directly to global state
-	// ---------------------------------------------------------
-	THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
-		const state = (window as any).__NEURAL_STATE;
-		if (state) {
-			state.targetProgress = (itemsLoaded / itemsTotal) * 100;
-		}
-	};
-
-	THREE.DefaultLoadingManager.onLoad = () => {
-		const state = (window as any).__NEURAL_STATE;
-		if (state) {
-			state.targetProgress = 100;
-			state.modelsReady = true;
-		}
-	};
-
+	// The 'heart' slot is claimed once, here, and resolved on whichever path
+	// actually finishes — real model or fallback sphere. See
+	// src/utils/loadState.ts for why this replaced the old
+	// THREE.DefaultLoadingManager + window.__NEURAL_STATE approach.
 	const loader = new GLTFLoader();
 	loader.load(
 		'/heart.glb',
 		async (gltf) => {
 			slices = await buildSlices(mergeModelGeometry(gltf.scene), heartGroup);
 			renderer.compile(scene, camera);
-			const state = (window as any).__NEURAL_STATE;
-			if (state) {
-				state.heartRenderReady = true;
-			}
+			markReady('heart');
 		},
 		undefined,
 		async () => {
@@ -677,10 +671,7 @@ let slices: SliceHolder[] = [];
 			slices = await buildSlices([fallback], heartGroup);
 			fallback.dispose(); 
 			renderer.compile(scene, camera);
-			const state = (window as any).__NEURAL_STATE;
-			if (state) {
-				state.heartRenderReady = true;
-			}
+			markReady('heart');
 		},
 	);
 
@@ -860,6 +851,17 @@ let slices: SliceHolder[] = [];
 
         scene.updateMatrixWorld(true);
 
+        if (hasFinePointer) {
+            if (slices.length) {
+                heartPointerNdc.set(mouse.targetX, mouse.targetY);
+                heartRaycaster.setFromCamera(heartPointerNdc, camera);
+                const solids = slices.map((slice) => slice.children[0]);
+                setHoverTarget('heart', heartRaycaster.intersectObjects(solids, false).length > 0);
+            } else {
+                setHoverTarget('heart', false);
+            }
+        }
+
         labels.forEach((label, i) => {
             const targetSlice = slices[(SLICE_COUNT - 1) - i];
             if (!targetSlice) return;
@@ -921,6 +923,7 @@ let slices: SliceHolder[] = [];
 			window.removeEventListener('scroll', calculateTargetProgress);
 			window.removeEventListener('resize', handleResize);
             window.removeEventListener('mousemove', handleMouseMove); 
+			setHoverTarget('heart', false);
 			renderer.dispose();
 			scene.traverse((obj) => {
 				if (obj instanceof THREE.Mesh) {

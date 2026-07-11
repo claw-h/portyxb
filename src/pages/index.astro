@@ -2,6 +2,8 @@
 import Layout from '../layouts/Layout.astro';	
 import Preloader from '../components/Preloader.astro';
 
+import '../styles/ui.css';
+
 const projects = [
 	{ code: 'DR-01', title: 'Identity Systems',          type: 'Creative direction / design',  year: '2026' },
 	{ code: 'AR-02', title: 'Moving Image Worlds',       type: 'Cinema / art direction',        year: '2025' },
@@ -13,8 +15,14 @@ const projects = [
 <Layout>
 	<Preloader />
 
-	<div class="cursor-dot" aria-hidden="true"></div>
-	<div class="cursor-ring" aria-hidden="true"></div>
+<div class="lens-cursor" aria-hidden="true">
+		<div class="lens-outer-rim"></div>
+		<div class="lens-inner-ring"></div>
+		<div class="lens-glass-reflection"></div>
+		<div class="lens-axis-x"></div>
+		<div class="lens-axis-y"></div>
+		<div class="lens-focal-point"></div>
+	</div>
 
 	<main class="site-shell">
 
@@ -164,10 +172,19 @@ const projects = [
 	import { setupVoidCanvas }     from '../scenes/VoidCanvas';
 	import { setupCursor }         from '../controllers/CursorController';
 	import { setupHeroCopyReveal, setupWorkReveal } from '../controllers/ScrollReveal';
+	import { onReady }             from '../utils/loadState';
 	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
-	
-	// Boot all systems
+
+	// The whole site sits fully laid out behind the (opaque) preloader from
+	// first paint — this class just locks scroll so the page can't be
+	// scrolled mid-load and land somewhere other than the top when the
+	// preloader lifts. Removed once utils/loadState reports real readiness.
+	document.documentElement.classList.add('is-site-loading');
+
+	// Boot all systems. setupDreamCanvas is synchronous — it kicks off its
+	// own async GLTF load internally and reports completion via
+	// utils/loadState, but returns its controller immediately.
 	const dream      = setupDreamCanvas();
 	const void_      = setupVoidCanvas();
 	const cursor     = setupCursor();
@@ -176,6 +193,25 @@ const projects = [
 	let active3DScene: LoopController | null = null;
 	let isInitializing = false; // Add this guard flag
 
+	document.addEventListener('DOMContentLoaded', () => {
+		const sceneContainers = document.querySelectorAll('.scene-container, #hero');
+		
+		const observer = new IntersectionObserver((entries) => {
+			let isAnySceneVisible = false;
+			entries.forEach(entry => {
+				if (entry.isIntersecting) isAnySceneVisible = true;
+			});
+			
+			if (isAnySceneVisible) {
+				document.body.setAttribute('data-scene-active', 'true');
+			} else {
+				document.body.removeAttribute('data-scene-active');
+			}
+		}, { threshold: 0.01 }); // Triggers when 1% of the scene is visible
+
+		sceneContainers.forEach(scene => observer.observe(scene));
+	});
+	
     async function init3DSystem() {
 		if (isInitializing || active3DScene) return;
 
@@ -199,6 +235,9 @@ const projects = [
         smoothWheel: true,
     });
 
+	// Held until the site is actually ready — see onReady() below.
+	lenis.stop();
+
 	// 3. Feed real-time Lenis scroll velocity into DreamCanvas
 	lenis.on('scroll', (e: { velocity: number; progress: number;}) => {
 		setDreamScrollVelocity(e.velocity);
@@ -212,6 +251,16 @@ const projects = [
         requestAnimationFrame(raf);
     }
     requestAnimationFrame(raf);
+
+	// Everything above has been rendering, off-screen, behind the opaque
+	// preloader this whole time. Only once fonts + the heart scene + the
+	// dream/staircase scene have all genuinely finished (see
+	// src/utils/loadState.ts, which Preloader.astro is also subscribed to)
+	// do we unlock scroll and let the site actually be interacted with.
+	onReady(() => {
+		document.documentElement.classList.remove('is-site-loading');
+		lenis.start();
+	});
 
 	// Unified cleanup for view transitions / HMR
 	const destroy = (): void => {
@@ -232,6 +281,12 @@ const projects = [
 	:global(body) { cursor: auto; }
 	:global(.has-custom-cursor body),
 	:global(.has-custom-cursor a) { cursor: none; }
+
+	/* The site renders fully behind the opaque preloader while this class is
+	   present — this is just a scroll-lock backstop alongside lenis.stop()
+	   in the script above, so a wheel/touch event can't sneak past Lenis
+	   and leave the page scrolled when the preloader lifts. */
+	:global(html.is-site-loading) { overflow: hidden; height: 100%; }
 
 	/* ─── Shell & scanline overlay ───────────────────── */
 	.site-shell {
@@ -1099,59 +1154,6 @@ const projects = [
 			transparent 72%
 		);
 		mix-blend-mode: screen;
-	}
-
-	/* ─── Custom cursor ──────────────────────────────── */
-	.cursor-dot,
-	.cursor-ring {
-		position: fixed;
-		top: 0;
-		left: 0;
-		z-index: 999;
-		pointer-events: none;
-		opacity: 0;
-	}
-
-	.has-custom-cursor .cursor-dot,
-	.has-custom-cursor .cursor-ring { opacity: 1; }
-
-	.cursor-dot {
-		width: 6px;
-		height: 6px;
-		margin: -3px 0 0 -3px;
-		border-radius: 50%;
-		background: #ffffff;
-		box-shadow: 0 0 14px #4da2ff;
-	}
-
-	.cursor-ring {
-		width: 36px;
-		height: 36px;
-		margin: -18px 0 0 -18px;
-		border: 1px solid rgba(77, 162, 255, 0.65);
-		border-radius: 50%;
-	}
-
-	[data-dimension-label] {
-    position: fixed; /* Critical for 2D screen projection */
-    top: 0;
-    left: 0;
-	margin: 0;
-    /* Add whatever typography styling you want here, but NO margins or absolute positioning */
-    color: #4da2ff;
-    font-family: monospace;
-    letter-spacing: 1px;
-    will-change: transform, opacity, filter;
-	}
-	/* ─── Keyframes ──────────────────────────────────── */
-	@keyframes prompt-breathe {
-		0%, 100% { transform: translate(-50%, 0) scale(1); opacity: 0.5; }
-		50%       { transform: translate(-50%, -5px) scale(1.02); opacity: 0.95; }
-	}
-
-	@keyframes phosphorPulse {
-		0%, 100% { opacity: 0.88; transform: scale(1) translateZ(0); }
-		50%       { opacity: 0.74; transform: scale(1.01) translateZ(0); }
 	}
 
 	/* ─── Responsive ─────────────────────────────────── */

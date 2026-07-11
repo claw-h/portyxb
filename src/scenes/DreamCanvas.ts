@@ -7,6 +7,8 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { createLoopController } from '../utils/canvas';
 import { clamp, lerp, smoothstep } from '../utils/math';
 import type { LoopController } from '../utils/canvas';
+import { markReady } from '../utils/loadState.ts';
+import { setHoverTarget } from '../utils/hoverTargets';
  
 // ---------------------------------------------------------------------------
 // Design System & Structural Interfaces
@@ -521,10 +523,13 @@ function drawOffscreenGlyphs(
 // ---------------------------------------------------------------------------
 // Main Pipeline Initiation & Background Pre-Compilation
 // ---------------------------------------------------------------------------
-export async function setupDreamCanvas(): Promise<LoopController | null> {
+export function setupDreamCanvas(): LoopController | null {
 	const section = document.querySelector<HTMLElement>('[data-canvas-zone="dream"]');
 	const outputCanvas = document.querySelector<HTMLCanvasElement>('[data-dream-canvas]');
-	if (!section || !outputCanvas) return null;
+	if (!section || !outputCanvas) {
+		markReady('dream');
+		return null;
+	}
 	const sectionEl = section;
 	const outputCanvasEl = outputCanvas;
  
@@ -537,13 +542,19 @@ export async function setupDreamCanvas(): Promise<LoopController | null> {
  
 	// 1. Build the scene instantly, but keep it dormant
 const initHeavyLifting = async () => {
-	if (isDestroyed) return;
+	if (isDestroyed) {
+		markReady('dream');
+		return;
+	}
 
 	await document.fonts.ready;
 	
 	const bufferCanvas = document.createElement('canvas');
 	const bctx = bufferCanvas.getContext('2d');
-	if (!bctx) return;
+	if (!bctx) {
+		markReady('dream');
+		return;
+	}
 
 const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: false, powerPreference: 'high-performance' });	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
@@ -642,10 +653,16 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 
 	renderer.compile(scene, camera);
 	composer.render();
+	markReady('dream');
 
 	const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
 	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	const mouse: MouseState = { nx: 0.5, ny: 0.5, cx: 0, cy: 0, speed: 0, prevCx: 0, prevCy: 0, vx: 0, vy: 0 };
+	// Reticle hover detection — raycast against the center "hero" staircase
+	// instance (instances[0], ix === 0) each frame and report to the shared
+	// hover registry. The puddle reflections flanking it don't count.
+	const dreamRaycaster = new THREE.Raycaster();
+	const dreamPointerNdc = new THREE.Vector2();
 
 let sectionRect = sectionEl.getBoundingClientRect();
 	const sectionMetrics = { top: sectionEl.offsetTop, height: sectionEl.offsetHeight };
@@ -760,6 +777,16 @@ const render = (time: number): void => {
 			inst.mesh.updateMatrix();
 		});
 
+		if (hasFinePointer) {
+			const heroMesh = instances[0]?.mesh;
+			if (heroMesh) {
+				masterGroup.updateMatrixWorld(true);
+				dreamPointerNdc.set(mouse.nx * 2 - 1, -(mouse.ny * 2 - 1));
+				dreamRaycaster.setFromCamera(dreamPointerNdc, camera);
+				setHoverTarget('staircase', dreamRaycaster.intersectObject(heroMesh, false).length > 0);
+			}
+		}
+
 		let lensScaleEnvelope = 0.0;
 		if (scrollProgress < 0.25) {
 			lensScaleEnvelope = smoothstep(0, 1, scrollProgress / 0.25);
@@ -790,6 +817,7 @@ const render = (time: number): void => {
 		if (hasFinePointer) section.removeEventListener('mousemove', onMouseMove);
 		window.removeEventListener('resize', onResize);
 		resizeObserver.disconnect();
+		setHoverTarget('staircase', false);
 
 		textPlane.geometry.dispose();
 		textMaterial.dispose();
@@ -807,11 +835,12 @@ const render = (time: number): void => {
 	}
 };
 
-if ('requestIdleCallback' in window) {
-	window.requestIdleCallback(() => initHeavyLifting());
-} else {
-	setTimeout(() => initHeavyLifting(), 1000);
-}
+// Previously deferred via requestIdleCallback to protect first paint before
+// a preloader existed. Now that this module's completion gates the site
+// reveal (see src/utils/loadState.ts), deferring it only delays that reveal
+// for no benefit — the preloader already owns the screen, so load in
+// parallel with the heart scene right away.
+initHeavyLifting();
 
 const observer = new IntersectionObserver((entries) => {
 	isVisible = entries[0].isIntersecting;

@@ -1,0 +1,133 @@
+/* ==========================================================================
+   Spherical Lens Custom Cursor Setup
+   ========================================================================== */
+
+/* Hide native OS cursor on active custom cursor areas */
+*, *::before, *::after {
+    cursor: none !important;
+}
+
+/* Core Base Wrapper */
+.lens-cursor {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    will-change: transform, opacity;
+    transition: opacity 0.25s ease, visibility 0.25s ease;
+}
+
+/* Logic Gate: Only reveal when hovering active 3D components */
+.lens-cursor.is-reticle {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Outer Lens Rim Rim & Curvature */
+.lens-outer-rim {
+    position: absolute;
+    width: 54px;
+    height: 54px;
+    margin: -27px 0 0 -27px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(159, 221, 255, 0.8);
+    box-shadow: 0 0 14px rgba(77, 162, 255, 0.35), inset 0 0 8px rgba(77, 162, 255, 0.25);
+    transform: translate3d(var(--lens-smooth-x, 0px), var(--lens-smooth-y, 0px), 0);
+    will-change: transform;
+}
+
+/* Inner Spherical Lens Contour Step */
+.lens-inner-ring {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    margin: -17px 0 0 -17px;
+    border-radius: 50%;
+    border: 1px dashed rgba(159, 221, 255, 0.35);
+    transform: translate3d(var(--lens-smooth-x, 0px), var(--lens-smooth-y, 0px), 0);
+    will-change: transform;
+}
+
+/* Volumetric Glass Convexity Shading */
+.lens-glass-reflection {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    margin: -25px 0 0 -25px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 32%, rgba(255, 255, 255, 0.28) 0%, rgba(159, 221, 255, 0.03) 45%, rgba(77, 162, 255, 0.15) 100%);
+    transform: translate3d(var(--lens-smooth-x, 0px), var(--lens-smooth-y, 0px), 0);
+    filter: blur(0.4px);
+    will-change: transform;
+}
+
+/* Horizontal Lens Etching Axis */
+.lens-axis-x {
+    position: absolute;
+    width: 70px;
+    height: 1px;
+    margin: 0 0 0 -35px;
+    background: linear-gradient(90deg, transparent, rgba(159, 221, 255, 0.6) 20%, rgba(159, 221, 255, 0.6) 80%, transparent);
+    transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0);
+    will-change: transform;
+}
+
+/* Vertical Lens Etching Axis */
+.lens-axis-y {
+    position: absolute;
+    width: 1px;
+    height: 70px;
+    margin: -35px 0 0 0;
+    background: linear-gradient(180deg, transparent, rgba(159, 221, 255, 0.6) 20%, rgba(159, 221, 255, 0.6) 80%, transparent);
+    transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0);
+    will-change: transform;
+}
+
+/* Ultra-crisp Single Focal Dot (Moves instantly with physical interaction) */
+.lens-focal-point {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    margin: -2px 0 0 -2px;
+    border-radius: 50%;
+    background: #9fddff;
+    box-shadow: 0 0 8px #4da2ff;
+    transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0);
+    will-change: transform;
+}
+
+/* ─── CYBERPUNK VECTOR ANIMATIONS (Zero Ghost Artifacts) ────────────────── */
+@keyframes scope-flicker {
+    0%, 93%, 100% {
+        transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) scale(1);
+        opacity: 1;
+    }
+    94% {
+        transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) translate(2px, -1px) scale(1.04);
+        opacity: 0.85;
+    }
+    96% {
+        transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) translate(-1px, 1px) scale(0.98);
+        opacity: 0.7;
+    }
+}
+
+@keyframes glyph-jitter {
+    0%, 88%, 100% { transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) scale(1); }
+    89% { transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) translate(-1.5px, 0.5px) scale(1.2); }
+    91% { transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) translate(1px, -1px) scale(0.85); }
+}
+
+[data-dimension-label] {
+    position: fixed;
+    top: 0;
+    left: 0;
+    margin: 0;
+    color: #4da2ff;
+    font-family: monospace;
+    letter-spacing: 1px;
+    will-change: transform, opacity, filter;
+}

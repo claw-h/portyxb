@@ -1,9 +1,4 @@
-// ---------------------------------------------------------------------------
-// Cursor controller
-// Runs only on fine-pointer (mouse) devices.
-// The ring animation is gated on document visibility to avoid burning
-// rAF budget in background tabs.
-// ---------------------------------------------------------------------------
+import { onHoverTargetChange } from '../utils/hoverTargets';
 
 export interface CursorController {
 	destroy: () => void;
@@ -12,22 +7,29 @@ export interface CursorController {
 export function setupCursor(): CursorController | null {
 	if (!window.matchMedia('(pointer: fine)').matches) return null;
 
-	const dot = document.querySelector<HTMLElement>('.cursor-dot');
-	const ring = document.querySelector<HTMLElement>('.cursor-ring');
-	if (!dot || !ring) return null;
+	const lensCursor = document.querySelector<HTMLElement>('.lens-cursor');
+	if (!lensCursor) return null;
 
-	let ringX = 0;
-	let ringY = 0;
+	let smoothX = 0;
+	let smoothY = 0;
 	let mouseX = 0;
 	let mouseY = 0;
 	let frame = 0;
 	let running = false;
+	let isHovering = false;
 
 	function tick(): void {
 		if (!running) return;
-		ringX += (mouseX - ringX) * 0.18;
-		ringY += (mouseY - ringY) * 0.18;
-		ring.style.transform = `translate(${ringX}px, ${ringY}px)`;
+		
+		// 0.16 interpolation rate gives the spherical glass chassis a weighted physical slide
+		smoothX += (mouseX - smoothX) * 0.16;
+		smoothY += (mouseY - smoothY) * 0.16;
+		
+		lensCursor.style.setProperty('--cursor-x', `${mouseX}px`);
+		lensCursor.style.setProperty('--cursor-y', `${mouseY}px`);
+		lensCursor.style.setProperty('--lens-smooth-x', `${smoothX}px`);
+		lensCursor.style.setProperty('--lens-smooth-y', `${smoothY}px`);
+		
 		frame = requestAnimationFrame(tick);
 	}
 
@@ -46,7 +48,11 @@ export function setupCursor(): CursorController | null {
 	function onMouseMove(event: MouseEvent): void {
 		mouseX = event.clientX;
 		mouseY = event.clientY;
-		dot.style.transform = `translate(${mouseX}px, ${mouseY}px)`;
+		
+		if (!running) {
+			lensCursor.style.setProperty('--cursor-x', `${mouseX}px`);
+			lensCursor.style.setProperty('--cursor-y', `${mouseY}px`);
+		}
 	}
 
 	function onVisibilityChange(): void {
@@ -54,9 +60,14 @@ export function setupCursor(): CursorController | null {
 		else start();
 	}
 
+	const unsubscribeHover = onHoverTargetChange((target) => {
+		isHovering = target !== null;
+		lensCursor.classList.toggle('is-reticle', isHovering);
+	});
+
 	window.addEventListener('mousemove', onMouseMove);
 	document.addEventListener('visibilitychange', onVisibilityChange);
-	document.documentElement.classList.add('has-custom-cursor');
+	
 	start();
 
 	return {
@@ -64,7 +75,7 @@ export function setupCursor(): CursorController | null {
 			stop();
 			window.removeEventListener('mousemove', onMouseMove);
 			document.removeEventListener('visibilitychange', onVisibilityChange);
-			document.documentElement.classList.remove('has-custom-cursor');
-		},
+			unsubscribeHover();
+		}
 	};
 }
