@@ -15,15 +15,32 @@ const projects = [
 <Layout>
 	<Preloader />
 
-<div class="lens-cursor" aria-hidden="true">
+	<div class="lens-cursor" aria-hidden="true">
+		
 		<div class="lens-outer-rim"></div>
 		<div class="lens-inner-ring"></div>
 		<div class="lens-glass-reflection"></div>
 		<div class="lens-axis-x"></div>
 		<div class="lens-axis-y"></div>
-		<div class="lens-focal-point"></div>
-	</div>
 
+		<div class="dome-base"></div>
+		<div class="dome-glass-glare"></div>
+		<div class="dome-crosshair-x"></div>
+		<div class="dome-crosshair-y"></div>
+		
+		<svg class="dome-text-ring" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+			<path id="text-path" d="M 50, 8 A 42,42 0 1,1 49.9, 8" fill="none" />
+			<text fill="#8fdcff" font-size="8.5" font-family="monospace" letter-spacing="2">
+				<textPath href="#text-path" startOffset="25%" text-anchor="middle">(LOCKED ON HEART)</textPath>
+			</text>
+			<text fill="#ffffff" font-size="8.5" font-family="monospace" letter-spacing="2">
+				<textPath href="#text-path" startOffset="75%" text-anchor="middle">TARGET <tspan id="cursor-coords">(0, 0)</tspan></textPath>
+			</text>
+		</svg>
+
+		<div class="lens-focal-point" id="focal-char">A</div>
+		
+	</div>
 	<main class="site-shell">
 
 		<!-- ═══════════════════════════════════════════

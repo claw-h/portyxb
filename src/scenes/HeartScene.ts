@@ -856,12 +856,21 @@ let slices: SliceHolder[] = [];
                 heartPointerNdc.set(mouse.targetX, mouse.targetY);
                 heartRaycaster.setFromCamera(heartPointerNdc, camera);
                 const solids = slices.map((slice) => slice.children[0]);
-                setHoverTarget('heart', heartRaycaster.intersectObjects(solids, false).length > 0);
+                
+                // 1. Check physical intersection
+                const isIntersecting = heartRaycaster.intersectObjects(solids, false).length > 0;
+                
+                // 2. Logic Gate: Ensure the ink fade hasn't obscured the heart
+                // (inkProgress hits 1.0 at the end of the scroll sequence)
+                const isVisible = inkProgress < 0.5; 
+                
+                // 3. Only emit true if BOTH conditions are met
+                setHoverTarget('heart', isIntersecting && isVisible);
             } else {
                 setHoverTarget('heart', false);
             }
         }
-
+		
         labels.forEach((label, i) => {
             const targetSlice = slices[(SLICE_COUNT - 1) - i];
             if (!targetSlice) return;
