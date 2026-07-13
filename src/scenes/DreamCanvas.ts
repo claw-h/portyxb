@@ -4,6 +4,7 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { createLoopController } from '../utils/canvas';
 import { clamp, lerp, smoothstep } from '../utils/math';
 import type { LoopController } from '../utils/canvas';
@@ -197,24 +198,53 @@ function buildGlyphs(width: number, height: number, previousGlyphs?: Glyph[]): G
 	});
 	return glyphs;
 }
- 
 async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
 	return new Promise((resolve) => {
 		const loader = new GLTFLoader();
+        
+		// Attach the decoder so it can unzip the meshopt file
+		loader.setMeshoptDecoder(MeshoptDecoder);
+
 		loader.load(
-			'/staircase.glb', 
+			'/staircase-meshopt.glb', // <-- Ensure this is your compressed file name
 			(gltf) => {
 				let extractedGeo: THREE.BufferGeometry | null = null;
-				const box = new THREE.Box3().setFromObject(gltf.scene);
-				const center = box.getCenter(new THREE.Vector3());
-				const size = box.getSize(new THREE.Vector3());
-				const maxDim = Math.max(size.x, size.y, size.z);
-				
-				const scale = STAIR_TARGET_SIZE / maxDim; 
  
 				gltf.scene.traverse((child) => {
 					if (child instanceof THREE.Mesh && child.geometry && !extractedGeo) {
 						extractedGeo = child.geometry.clone() as THREE.BufferGeometry;
+
+						// =========================================================
+						// 1. DE-QUANTIZE FIRST
+						// Fix the coordinates before we try to measure the mesh
+						// =========================================================
+						['position', 'normal'].forEach((key) => {
+							const attr = extractedGeo!.attributes[key];
+							if (attr && !(attr.array instanceof Float32Array)) {
+								const floatArray = new Float32Array(attr.count * attr.itemSize);
+								for (let i = 0; i < attr.count; i++) {
+									if (attr.itemSize >= 1) floatArray[i * attr.itemSize] = attr.getX(i);
+									if (attr.itemSize >= 2) floatArray[i * attr.itemSize + 1] = attr.getY(i);
+									if (attr.itemSize >= 3) floatArray[i * attr.itemSize + 2] = attr.getZ(i);
+								}
+								extractedGeo!.setAttribute(key, new THREE.BufferAttribute(floatArray, attr.itemSize));
+							}
+						});
+
+						// =========================================================
+						// 2. MEASURE THE FIXED GEOMETRY
+						// Now that it's standard floats, the math will be perfect
+						// =========================================================
+						extractedGeo.computeBoundingBox();
+						const box = extractedGeo.boundingBox!;
+						const center = box.getCenter(new THREE.Vector3());
+						const size = box.getSize(new THREE.Vector3());
+						const maxDim = Math.max(size.x, size.y, size.z);
+						const scale = STAIR_TARGET_SIZE / maxDim; 
+
+						// =========================================================
+						// 3. APPLY TRANSLATION & SCALE
+						// =========================================================
 						extractedGeo.translate(-center.x, -center.y, -center.z);
 						extractedGeo.scale(scale, scale, scale);
 						extractedGeo.computeVertexNormals();

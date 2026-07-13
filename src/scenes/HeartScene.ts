@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -10,7 +11,9 @@ import type { LoopController } from '../utils/canvas';
 import { markReady } from '../utils/loadState.ts';
 import { setHoverTarget } from '../utils/hoverTargets';
 
-// ---------------------------------------------------------------------------
+// ------------------
+// ---------------------------------------------------------
+
 // Types & Constants
 // ---------------------------------------------------------------------------
 
@@ -71,6 +74,25 @@ function mergeModelGeometry(model: THREE.Object3D): THREE.BufferGeometry[] {
 	model.traverse((child) => {
 		if (!(child instanceof THREE.Mesh) || !child.geometry) return;
 		const geometry = child.geometry.clone() as THREE.BufferGeometry;
+
+		// =========================================================
+		// DE-QUANTIZE COMPRESSED GEOMETRY
+		// Converts meshopt/draco integers back to floats so matrix 
+        // math doesn't corrupt the vertices.
+		// =========================================================
+		['position', 'normal'].forEach((key) => {
+			const attr = geometry.attributes[key];
+			if (attr && !(attr.array instanceof Float32Array)) {
+				const floatArray = new Float32Array(attr.count * attr.itemSize);
+				for (let i = 0; i < attr.count; i++) {
+					if (attr.itemSize >= 1) floatArray[i * attr.itemSize] = attr.getX(i);
+					if (attr.itemSize >= 2) floatArray[i * attr.itemSize + 1] = attr.getY(i);
+					if (attr.itemSize >= 3) floatArray[i * attr.itemSize + 2] = attr.getZ(i);
+				}
+				geometry.setAttribute(key, new THREE.BufferAttribute(floatArray, attr.itemSize));
+			}
+		});
+
 		geometry.applyMatrix4(child.matrixWorld);
 		geometry.deleteAttribute('uv');
 		const nonIndexed = geometry.toNonIndexed();
@@ -126,6 +148,64 @@ function buildSliceGeometry(geometries: THREE.BufferGeometry[], sliceIndex: numb
 	return sliceGeometry;
 }
 
+// =========================================================
+// UNIFORM REVEAL & SPOTLIGHT CONFIGURATION
+// =========================================================
+const spotlightConfig = {
+	pos: new THREE.Vector3(0, 0, 0),
+	targetPos: new THREE.Vector3(0, 0, 0),
+	intensity: 0,
+	targetIntensity: 0,
+	radius: 1.35, // Premium wider spread for a softer volumetric falloff
+};
+
+const spotlightUniforms = {
+	uScannerPos: { value: spotlightConfig.pos },
+	uScannerRadius: { value: spotlightConfig.radius },
+	uScannerIntensity: { value: spotlightConfig.intensity }
+};
+
+const injectSpotlightReveal = (shader: THREE.Shader) => {
+	shader.uniforms.uScannerPos = spotlightUniforms.uScannerPos;
+	shader.uniforms.uScannerRadius = spotlightUniforms.uScannerRadius;
+	shader.uniforms.uScannerIntensity = spotlightUniforms.uScannerIntensity;
+
+	shader.vertexShader = `
+		varying vec3 vWorldPos;
+		${shader.vertexShader}
+	`.replace(
+		`#include <project_vertex>`,
+		`#include <project_vertex>\n			 vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`
+	);
+
+	shader.fragmentShader = `
+		uniform vec3 uScannerPos;
+		uniform float uScannerRadius;
+		uniform float uScannerIntensity;
+		varying vec3 vWorldPos;
+		${shader.fragmentShader}
+	`.replace(
+		`#include <dithering_fragment>`,
+		`
+		#include <dithering_fragment>
+		float shaderDist = distance(vWorldPos, uScannerPos);
+		float shaderReveal = 1.0 - smoothstep(uScannerRadius * 0.1, uScannerRadius, shaderDist);
+		shaderReveal *= uScannerIntensity;
+
+		// Base subtle ambient visibility of the heart when outside the spotlight beam
+		float baseVisibility = 0.025;
+		
+		// Perfect uniform alpha reveal interaction mapping
+		gl_FragColor.a = mix(gl_FragColor.a * baseVisibility, gl_FragColor.a * 1.0, shaderReveal);
+		
+		// Injected Volumetric Light Glow Effect 
+		vec3 volumetricColor = vec3(0.48, 0.82, 1.0); // Technological cyan-blue glow
+		float volumetricFalloff = pow(1.0 - clamp(shaderDist / uScannerRadius, 0.0, 1.0), 2.5);
+		gl_FragColor.rgb += volumetricColor * volumetricFalloff * uScannerIntensity * 0.48;
+		`
+	);
+};
+
 async function buildSlices(
 	geometries: THREE.BufferGeometry[],
 	group: THREE.Group,
@@ -143,7 +223,7 @@ async function buildSlices(
 			emissive: 0x1c2e4d,
 			emissiveIntensity: 0.08,
 			transparent: true,
-			opacity: 0.42,
+			opacity: 0.22, // Reduced maximum opacity for a stealthier look
 			roughness: 0.18,
 			metalness: 0.06,
 			transmission: 0.72,
@@ -158,15 +238,20 @@ async function buildSlices(
 		const wireMaterial = new THREE.MeshBasicMaterial({
 			color: 0xc6e4ff,
 			transparent: true,
-			opacity: 0.35,
+			opacity: 0.18, // Reduced maximum opacity
 			wireframe: true,
 			depthWrite: false,
 		});
 		const edgeMaterial = new THREE.LineBasicMaterial({
 			color: 0x76cdff,
 			transparent: true,
-			opacity: 0.22,
+			opacity: 0.12, // Reduced maximum opacity
 		});
+
+		// Apply the shared spotlight injection directly into material shader compilations
+		solidMaterial.onBeforeCompile = injectSpotlightReveal;
+		wireMaterial.onBeforeCompile = injectSpotlightReveal;
+		edgeMaterial.onBeforeCompile = injectSpotlightReveal;
 
 		const holder = new THREE.Group() as SliceHolder;
 		holder.userData.baseY = 0;
@@ -177,8 +262,11 @@ async function buildSlices(
 		const solid = new THREE.Mesh(sliceGeometry, solidMaterial);
 		const wire = new THREE.Mesh(sliceGeometry.clone(), wireMaterial);
 		const edges = new THREE.LineSegments(new THREE.EdgesGeometry(sliceGeometry, 22), edgeMaterial);
+
 		wire.scale.setScalar(1.006);
 		edges.scale.setScalar(1.011);
+
+		// Removed glitchy xRayMesh clone layers completely
 		holder.add(solid, wire, edges);
 		holder.userData.materials = { solid: solidMaterial, wire: wireMaterial, edges: edgeMaterial };
 		holder.position.y = 0;
@@ -276,7 +364,7 @@ function createWebGLFireSystem(fireCount = 200) {
 				vec3 colorRed = vec3(0.5, 0.0, 0.0);
 
 				vec3 finalColor = mix(colorRed, colorOrange, smoothstep(0.0, 0.5, vLife));
-				finalColor = mix(finalColor, colorWhite, smoothstep(0.5, 1.0, vLife));
+ finalColor = mix(finalColor, colorWhite, smoothstep(0.5, 1.0, vLife));
 
 				gl_FragColor = vec4(finalColor, alpha);
 			}
@@ -464,8 +552,7 @@ export function setupHeartScene(): LoopController | null {
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
     // Reticle hover detection — raycast against the heart's solid slice
-    // meshes each frame and report hits to the shared hover registry. The
-    // cursor controller listens there; it has no idea this scene exists.
+    // meshes each frame and report hits to the shared hover registry.
     const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
     const heartRaycaster = new THREE.Raycaster();
     const heartPointerNdc = new THREE.Vector2();
@@ -490,7 +577,7 @@ export function setupHeartScene(): LoopController | null {
 
 	const bloomPass = new UnrealBloomPass(
 		new THREE.Vector2(window.innerWidth, window.innerHeight),
-		1.5, 
+		1.2, 
 		0.4, 
 		0.9  
 	);
@@ -590,12 +677,17 @@ export function setupHeartScene(): LoopController | null {
 	const heartGroup = new THREE.Group();
 	scene.add(heartGroup);
 
+	// Standard Environmental Lights
 	const ambient = new THREE.AmbientLight(0x4da2ff, 1.8);
 	const key = new THREE.PointLight(0xa6d8ff, 95, 14);
 	key.position.set(3, 2.8, 4);
 	const blue = new THREE.PointLight(0x00aaff, 45, 12);
 	blue.position.set(-3, -1.8, 3);
 	scene.add(ambient, key, blue);
+
+	// Dedicated hardware hardware spotlight source for real volumetric lighting glare
+	const spotlightPointLight = new THREE.PointLight(0x8fdcff, 0, 5);
+	scene.add(spotlightPointLight);
 
 	const gridMaterial = new THREE.ShaderMaterial({
 		uniforms: {
@@ -650,15 +742,14 @@ export function setupHeartScene(): LoopController | null {
 	const screenGrid = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), gridMaterial);
 	screenGrid.position.z = -15; 
 	scene.add(screenGrid);
-let slices: SliceHolder[] = [];
+	let slices: SliceHolder[] = [];
 
-	// The 'heart' slot is claimed once, here, and resolved on whichever path
-	// actually finishes — real model or fallback sphere. See
-	// src/utils/loadState.ts for why this replaced the old
-	// THREE.DefaultLoadingManager + window.__NEURAL_STATE approach.
 	const loader = new GLTFLoader();
+
+	loader.setMeshoptDecoder(MeshoptDecoder);
+
 	loader.load(
-		'/heart.glb',
+		'/heart-meshopt.glb',
 		async (gltf) => {
 			slices = await buildSlices(mergeModelGeometry(gltf.scene), heartGroup);
 			renderer.compile(scene, camera);
@@ -695,21 +786,18 @@ let slices: SliceHolder[] = [];
 		let rectScale = 1;
 
 		if (progress >= SNAP_OUT) {
-			const snapProgress = clamp((progress - SNAP_OUT) / 0.02); // Handles the 0.92 -> 0.94 push
+			const snapProgress = clamp((progress - SNAP_OUT) / 0.02); 
 			rectOpacity = 1 - snapProgress;
 			rectScale = 1 + (snapProgress * 0.05); 
 		}
 
 		if (progressContainer) {
-			// SB stays completely solid while RCT draws (0.88 -> 0.92)
-			// It vanishes instantly at 0.92 right when the frame closes and explodes outward
 			if (progress < 0.02 || progress >= SNAP_OUT) {
 				progressContainer.style.opacity = '0';
 			} else {
 				progressContainer.style.opacity = '1';
 			}
 			
-			// Applies the outward scale-pop at the exact same frame boundary
 			const pushOutwardX = (rectScale - 1) * 400; 
 			progressContainer.style.transform = `translate3d(${pushOutwardX}px, 0, 0) scale(${rectScale})`;
 		}
@@ -720,13 +808,11 @@ let slices: SliceHolder[] = [];
 
             if (progress < BORDER_START) {
                 borderSvg.style.opacity = '0';
-                // Hold the scrollbar area pre-filled but invisible until BORDER_START
 				borderPaths[0].style.strokeDashoffset = `${pathLength - topScrollbarLength}`;
 				borderPaths[1].style.strokeDashoffset = `${pathLength - botScrollbarLength}`;
                 borderSvg.style.transform = `scale(1)`;
                 borderSvg.classList.remove('is-snapped');
             } else if (progress < BORDER_END) {
-                // Drawing phase: Shoot outward perfectly from the top and bottom tips of the scrollbar
                 borderSvg.style.opacity = '1';
                 borderSvg.style.transform = `scale(1)`;
                 const drawProgress = (progress - BORDER_START) / (BORDER_END - BORDER_START);
@@ -735,7 +821,6 @@ let slices: SliceHolder[] = [];
 				borderPaths[1].style.strokeDashoffset = `${(pathLength - botScrollbarLength) * (1 - drawProgress)}`;
                 borderSvg.classList.remove('is-snapped');
             } else {
-                // Fully drawn loop: No chunk missing when progress bar vanishes!
                 borderSvg.style.opacity = String(rectOpacity);
                 borderSvg.style.transform = `scale(${rectScale})`;
                 borderPaths[0].style.strokeDashoffset = '0';
@@ -845,8 +930,9 @@ let slices: SliceHolder[] = [];
             materials.solid.emissive.setRGB(sliceLight, sliceLight * 0.58, sliceLight * 0.24 * 0.75);
             materials.solid.emissiveIntensity = lerp(0.04, 1.5, sliceLight);
 
-            materials.wire.opacity = lerp(0.35, 0.95, sliceLight);
-            materials.edges.opacity = lerp(0.22, 0.9, sliceLight);
+            // Subtle lowered maximum opacities applied to the runtime loop targets
+            materials.wire.opacity = lerp(0.12, 0.45, sliceLight);
+            materials.edges.opacity = lerp(0.08, 0.40, sliceLight);
         });
 
         scene.updateMatrixWorld(true);
@@ -858,18 +944,42 @@ let slices: SliceHolder[] = [];
                 const solids = slices.map((slice) => slice.children[0]);
                 
                 // 1. Check physical intersection
-                const isIntersecting = heartRaycaster.intersectObjects(solids, false).length > 0;
+                const intersects = heartRaycaster.intersectObjects(solids, false);
+                const isIntersecting = intersects.length > 0;
                 
-                // 2. Logic Gate: Ensure the ink fade hasn't obscured the heart
-                // (inkProgress hits 1.0 at the end of the scroll sequence)
+                // 2. Logic Gate
                 const isVisible = inkProgress < 0.5; 
                 
-                // 3. Only emit true if BOTH conditions are met
+                // 3. Emit Pub/Sub Hover State
                 setHoverTarget('heart', isIntersecting && isVisible);
+
+                // =========================================================
+                // PHASE 2: VOLUMETRIC SPOTLIGHT INTERACTION
+                // =========================================================
+                if (isIntersecting && isVisible) {
+                    // Update configuration targets
+                    spotlightConfig.targetPos.copy(intersects[0].point);
+                    spotlightConfig.targetIntensity = 1.0;
+                } else {
+                    spotlightConfig.targetIntensity = 0.0;
+                }
+
             } else {
                 setHoverTarget('heart', false);
             }
         }
+
+		// Smoothly lerp spotlight tracking properties for sleek fluid movement and fading
+		spotlightConfig.intensity = lerp(spotlightConfig.intensity, spotlightConfig.targetIntensity, 0.1);
+		if (spotlightConfig.intensity > 0.001) {
+			spotlightConfig.pos.lerp(spotlightConfig.targetPos, 0.12);
+		}
+		
+		// Synchronize the compiled material uniforms and hardware point light
+		spotlightUniforms.uScannerPos.value.copy(spotlightConfig.pos);
+		spotlightUniforms.uScannerIntensity.value = spotlightConfig.intensity;
+		spotlightPointLight.position.copy(spotlightConfig.pos);
+		spotlightPointLight.intensity = spotlightConfig.intensity * 38.0;
 		
         labels.forEach((label, i) => {
             const targetSlice = slices[(SLICE_COUNT - 1) - i];
