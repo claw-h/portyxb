@@ -37,6 +37,8 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { PanelManager } from '../ui/telemetry/PanelManager';
+import { type PanelConfig } from '../ui/telemetry/types';
 import { clamp, lerp, smoothstep } from '../utils/math';
 import { createLoopController } from '../utils/canvas';
 import type { LoopController } from '../utils/canvas';
@@ -504,6 +506,45 @@ export function setupHeartScene(): LoopController | null {
 	const heroCopyEl = document.querySelector<HTMLElement>('[data-hero-copy]');
 	const lineOne = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--one');
 	const lineTwo = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--two');
+
+
+	const uiLayer = document.getElementById('heart-ui-layer');
+    if (!uiLayer) {
+        console.warn('Telemetry UI layer (#heart-ui-layer) not found in DOM.');
+    }
+    const panelManager = new PanelManager(uiLayer as HTMLElement);
+
+    // 🟢 2. REGISTER TELEMETRY PANELS 🟢
+    // We'll map these to specific slices (index 4 is top/aorta, index 2 is middle/ventricle)
+    // 🟢 NEW PANEL CONFIGURATIONS FOR PROTOTYPE FUNCTIONALITY 🟢
+    const panelConfigs: PanelConfig[] = [
+        {
+            id: 'telemetry-left',
+            eyebrow: 'SYS-01',
+            title: 'Cardiac Descent',
+            brand: 'HEMODYNAMICS',
+            model: 'MK-IV',
+            channels: [
+                { id: 'heartFade', type: 'meter', label: 'Heart Opacity', min: 0, max: 100, majorStep: 25 },
+                { id: 'dissection', type: 'meter', label: 'Dissection Depth', min: 0, max: 100, majorStep: 25, redlineFrom: 80 },
+                { id: 'progressKnob', type: 'knob', label: 'Scroll Depth', min: 0, max: 100 },
+                { id: 'progressPct', type: 'digital', label: 'Progress Tracking', format: (v) => v.toFixed(1) + '%' }
+            ]
+        },
+        {
+            id: 'telemetry-right',
+            eyebrow: 'SYS-02',
+            title: 'Optical Tracking',
+            brand: 'MYOCARDIUM',
+            model: 'LV-X',
+            channels: [
+                { id: 'lat', type: 'meter', label: 'Cursor Lat', min: -100, max: 100, majorStep: 50 },
+                { id: 'long', type: 'meter', label: 'Cursor Long', min: -100, max: 100, majorStep: 50 },
+                { id: 'intersect', type: 'led', label: 'Target Intersection' }
+            ]
+        }
+    ];
+    panelConfigs.forEach(c => panelManager.registerPanel(c));
 
 	let pathLength = 0;
 	let pTop = 0;
@@ -1044,9 +1085,49 @@ export function setupHeartScene(): LoopController | null {
                     spotlightConfig.targetIntensity = 0.0;
                 }
 
+				// 🟢 UPDATE NEW TELEMETRY PANELS WITH LIVE WEBGL DATA 🟢
+        // Match the visibility to the old HUD timeline (0.02 to 0.60)
+        // 🟢 Replace your panel positioning variables with these:
+        const panelVisibility = (currentProgress >= 0.02 && currentProgress <= 0.60) ? 1.0 : 0.0;
+
+        const SCALE = 0.40;
+        const PANEL_BASE_WIDTH = 530; 
+        const actualPanelWidth = PANEL_BASE_WIDTH * SCALE; // 212px
+
+        const leftPanelX = window.innerWidth * 0.02; // 2% margin          
+        const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
+        const panelY = window.innerHeight * 0.22;      
+        // --- Left Viewport Panel (Scroll & Opacity Metrics) ---
+        panelManager.update('telemetry-left', {
+            x: leftPanelX,
+            y: panelY,
+            opacity: panelVisibility,
+            values: {
+                heartFade: heartFade * 100,
+                dissection: dissectionProgress * 100,
+                progressKnob: currentProgress * 100,
+                progressPct: currentProgress * 100
+            }
+        });
+
+        // --- Right Viewport Panel (Raycaster & Mouse Metrics) ---
+        panelManager.update('telemetry-right', {
+            x: rightPanelX - 250,
+            y: panelY,
+            opacity: panelVisibility,
+            values: {
+                // targetX/Y are -1 to 1, multiplying by 100 fits the meter scale perfectly
+                lat: mouse.targetY * 100,
+                long: mouse.targetX * 100,
+                intersect: isIntersecting 
+            }
+        });
+
             } else {
                 setHoverTarget('heart', false);
             }
+
+			
         }
 
 		// Smoothly lerp spotlight tracking properties for sleek fluid movement and fading
@@ -1098,7 +1179,7 @@ export function setupHeartScene(): LoopController | null {
             label.style.transform = `translate3d(calc(${x + slideX}px + ${alignOffset}), calc(${y}px - 50%), 0)`;
         });
 
-        fireSystem.update(time, fireProgress);
+		fireSystem.update(time, fireProgress);
 
         inkPass.uniforms.uTime.value = time * 0.001;
         inkPass.uniforms.uProgress.value = smoothstep(0.0, 1.0, inkProgress);

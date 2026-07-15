@@ -1,0 +1,392 @@
+/* ui/telemetry/InstrumentPanel.css */
+
+:root {
+  --chassis-0: #05070a;
+  --chassis-1: #11161f;
+  --chassis-2: #1c2531;
+  --chassis-edge: #3a4656;
+  --chassis-edge-hi: #57697f;
+  --meter-face: #e9dfc2;
+  --meter-face-2: #d8caa2;
+  --meter-ink: #241d10;
+  --meter-glow: #ffb454;
+  --accent-cyan: #7fd4ff;
+  --accent-cyan-dim: #2d4356;
+  --accent-red: #ff4433;
+  --accent-red-dim: #4a1a16;
+  --text-hud: #cfe8ff;
+  --text-dim: #6d7d90;
+  --label-font: 'Oswald', sans-serif;
+  --mono-font: 'JetBrains Mono', monospace;
+}
+
+/* ---------------------------------------------------------------- */
+/* Telemetry Device Structural Frame & Exposed Gears                */
+/* ---------------------------------------------------------------- */
+
+.panel-assembly {
+  position: absolute; /* Key for arbitrary positioning over canvas */
+  top: 0;
+  left: 0;
+  font-family: var(--label-font);
+  color: var(--text-hud);
+  /* Optional: Add transition for smoother absolute positioning later */
+  transition: opacity 0.3s ease;
+  will-change: transform, opacity;
+}
+
+.telemetry-gear {
+  position: absolute;
+  fill: #0c1117;
+  stroke: #1f2836;
+  stroke-width: 1;
+  z-index: -1;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.8));
+  animation: gearRotate 40s linear infinite;
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+@keyframes gearRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.panel-assembly .gear--alpha { top: -24px; left: -8px; width: 70px; height: 70px; animation-duration: 50s; }
+.panel-assembly .gear--beta { bottom: 40px; right: -20px; width: 90px; height: 90px; animation-direction: reverse; animation-duration: 75s; }
+
+/* Heavy 3D Cast Iron Chassis Housing Box */
+.panel {
+  position: relative;
+  width: 530px;
+  max-width: 100%;
+  background: 
+    linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%),
+    linear-gradient(90deg, #0d121a 0%, var(--chassis-2) 12px, var(--chassis-1) 50%, var(--chassis-0) 100%);
+  border-radius: 6px;
+  padding: 30px 36px;
+  
+  box-shadow:
+    0 40px 90px -20px rgba(0, 0, 0, 0.95),
+    0 15px 30px -10px rgba(0, 0, 0, 0.8),
+    inset 0 2px 3px rgba(255,255,255,0.1),
+    inset 0 -4px 12px rgba(0,0,0,0.8),
+    0 0 0 1px #040609,
+    0 0 0 4px #121821,
+    0 0 0 5px var(--chassis-edge);
+  
+  transform: perspective(1200px) rotateX(1.5deg);
+  transform-style: preserve-3d;
+}
+
+.panel::before, .panel::after {
+  content: '';
+  position: absolute;
+  top: 30px;
+  width: 12px;
+  height: calc(100% - 60px);
+  background: linear-gradient(180deg, var(--chassis-edge) 0%, var(--chassis-1) 50%, #0a0e14 100%);
+  border: 1px solid rgba(0,0,0,0.4);
+  box-shadow: inset 1px 1px 0 rgba(255,255,255,0.08), 0 4px 8px rgba(0,0,0,0.5);
+}
+.panel::before { left: -12px; border-radius: 3px 0 0 3px; }
+.panel::after { right: -12px; border-radius: 0 3px 3px 0; }
+
+.panel__bolt {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #768599, #202730 75%, #05070a 100%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,0.4), 0 2px 4px rgba(0,0,0,0.8);
+}
+.panel__bolt::after {
+  content: '';
+  position: absolute;
+  top: 50%; left: 15%; width: 70%; height: 2px;
+  background: #06080b;
+  transform: translateY(-50%) rotate(40deg);
+}
+.panel__bolt--tl { top: 12px; left: 12px; }
+.panel__bolt--tr { top: 12px; right: 12px; }
+.panel__bolt--bl { bottom: 12px; left: 12px; }
+.panel__bolt--br { bottom: 12px; right: 12px; }
+
+/* ---------------------------------------------------------------- */
+/* Spherical Fish-Eye Telemetry Lens Base                           */
+/* ---------------------------------------------------------------- */
+.panel__lens-housing {
+  position: relative;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #06090e;
+  border: 2px solid #040508;
+  box-shadow: inset 0 10px 25px rgba(0,0,0,0.95), 0 1px 2px rgba(255,255,255,0.05);
+}
+
+.panel__lens-overlay {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  border-radius: inherit;
+  background:
+    radial-gradient(ellipse at 50% 15%, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.04) 15%, transparent 55%),
+    radial-gradient(circle at 50% 50%, transparent 35%, rgba(0, 0, 0, 0.4) 75%, rgba(0, 0, 0, 0.85) 100%);
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.9), inset 0 2px 6px rgba(255,255,255,0.1);
+}
+
+.panel__lens-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(180deg, rgba(127, 212, 255, 0.015) 0px, rgba(127, 212, 255, 0.015) 1px, transparent 1px, transparent 3px);
+  opacity: 0.7;
+}
+
+.panel__faceplate {
+  padding: 16px 20px;
+  background: 
+    linear-gradient(rgba(255, 255, 255, 0.003) 1px, transparent 1px) 0 0 / 12px 12px,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.003) 1px, transparent 1px) 0 0 / 12px 12px,
+    linear-gradient(180deg, var(--chassis-1) 0%, var(--chassis-0) 100%);
+  transform: scale(1.01); 
+}
+
+/* ---------------------------------------------------------------- */
+/* Component Layout Structure                                       */
+/* ---------------------------------------------------------------- */
+.panel__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #000000;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+}
+.panel__eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.35em;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+.panel__title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--text-hud);
+}
+
+.panel__row {
+  display: flex;
+  gap: 20px;
+  padding: 14px 0;
+  align-items: center;
+  justify-content: center;
+}
+.panel__row + .panel__row {
+  border-top: 1px solid #000000;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.panel__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 14px;
+  margin-top: 12px;
+  border-top: 2px solid #000000;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.panel__brand {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.panel__model {
+  font-family: var(--mono-font);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--accent-cyan);
+  background: rgba(0,0,0,0.4);
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid rgba(127, 212, 255, 0.15);
+}
+
+/* ---------------------------------------------------------------- */
+/* Recessed Galvanic Spherical VU Gauges                            */
+/* ---------------------------------------------------------------- */
+.channel--meter { width: 210px; text-align: center; }
+.meter__housing {
+  position: relative;
+  border-radius: 3px;
+  padding: 10px 8px 4px;
+  background: #020305;
+  box-shadow: inset 0 6px 12px rgba(0,0,0,0.9), inset 0 1px 3px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.05);
+  border: 1px solid #000000;
+}
+.meter__housing::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 10%, rgba(255,255,255,0.1) 0%, transparent 50%);
+  pointer-events: none;
+}
+.meter__face { width: 100%; height: auto; display: block; overflow: visible; }
+.meter__redline { fill: none; stroke: var(--accent-red); stroke-width: 5; opacity: 0.8; }
+.meter__tick { stroke: var(--meter-ink); stroke-width: 1.5; opacity: 0.9; }
+.meter__tick--minor { stroke-width: 0.8; opacity: 0.6; }
+.meter__ticklabel { fill: var(--meter-ink); font-family: var(--mono-font); font-size: 9px; font-weight: 600; text-anchor: middle; }
+.meter__needle { stroke: #171109; stroke-width: 2.2; stroke-linecap: round; }
+.meter__pivot { fill: #0f0a06; stroke: #332917; stroke-width: 1.5; }
+.meter__label {
+  margin-top: 8px; font-size: 11px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------- */
+/* Heavy Machined Fluted Dial Knobs                                 */
+/* ---------------------------------------------------------------- */
+.channel--knob { width: 120px; text-align: center; }
+.knob__stage { position: relative; width: 84px; height: 84px; margin: 0 auto; }
+.knob__ticks { position: absolute; inset: 0; }
+.knob__tick {
+  position: absolute; top: 0; left: 50%; width: 2px; height: 6px; margin-left: -1px;
+  background: var(--text-dim); opacity: 0.4; transform-origin: 50% 42px;
+}
+.knob__outer-bezel {
+  position: absolute; inset: 6px; border-radius: 50%;
+  background: linear-gradient(135deg, #262f3c 0%, #070a0e 100%);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.15); padding: 3px;
+}
+.knob__body {
+  width: 100%; height: 100%; border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle at 50% 50%, transparent 0px, transparent 2px, rgba(0,0,0,0.3) 2px, rgba(0,0,0,0.3) 4px),
+    radial-gradient(circle at 35% 30%, #464f5d 0%, #171a21 65%, #050608 100%);
+  border: 1px solid #000000; position: relative; box-shadow: inset 0 2px 4px rgba(255,255,255,0.2);
+}
+.knob__pointer {
+  position: absolute; bottom: 50%; left: 50%; width: 3px; height: 36%;
+  background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan);
+  transform-origin: 50% 100%; border-radius: 1px;
+}
+.knob__value { margin-top: 8px; font-family: var(--mono-font); font-size: 13px; font-weight: 700; color: var(--accent-cyan); }
+.knob__label { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
+
+/* ---------------------------------------------------------------- */
+/* Recessed Cathode-Style Matrix Readout Display                    */
+/* ---------------------------------------------------------------- */
+.channel--digital { width: 120px; text-align: center; }
+.digital__screen {
+  padding: 10px 6px; border-radius: 2px; background: #010605; border: 1px solid #040d09;
+  box-shadow: inset 0 4px 10px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.04);
+  position: relative; overflow: hidden;
+}
+.digital__screen::before {
+  content: ''; position: absolute; inset: 0;
+  background: 
+    linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px) 0 0 / 3px 100%,
+    linear-gradient(180deg, rgba(0,0,0,0.2) 1px, transparent 1px) 0 0 / 100% 2px;
+  pointer-events: none; z-index: 3;
+}
+.digital__value { font-family: var(--mono-font); font-size: 17px; font-weight: 700; color: #5effa4; text-shadow: 0 0 6px rgba(94,255,164,0.6); position: relative; z-index: 2; }
+.digital__label { margin-top: 12px; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
+
+/* ---------------------------------------------------------------- */
+/* Heavy Knife Switch / Rocker Mechanisms                           */
+/* ---------------------------------------------------------------- */
+.channel--toggle { width: 130px; text-align: center; }
+.toggle__housing { padding: 6px; background: #080b0f; border-radius: 4px; border: 1px solid #000; box-shadow: inset 0 2px 5px rgba(0,0,0,0.8), 0 1px 1px rgba(255,255,255,0.05); }
+.toggle__track { position: relative; width: 72px; height: 28px; margin: 0 auto; border-radius: 2px; background: #020305; box-shadow: inset 0 3px 5px rgba(0,0,0,0.9); }
+.toggle__thumb {
+  position: absolute; top: 2px; left: 2px; width: 32px; height: 22px; border-radius: 1px;
+  background: linear-gradient(180deg, #4c5460 0%, #1d2127 100%); border: 1px solid #080a0d;
+  box-shadow: 0 3px 4px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.2); transition: transform 0.12s cubic-bezier(.4, 0, .2, 1);
+}
+.toggle__thumb::after { content: ''; position: absolute; top: 15%; left: 50%; transform: translateX(-50%); width: 3px; height: 70%; background: rgba(0,0,0,0.4); border-radius: 1px; }
+.toggle.is-on .toggle__thumb { transform: translateX(36px); background: linear-gradient(180deg, #324c5e 0%, #131f29 100%); border-color: #0b121a; }
+.toggle__labels { display: flex; justify-content: space-between; padding: 0 2px; margin-top: 6px; font-family: var(--mono-font); font-size: 9px; font-weight: 600; text-transform: uppercase; color: var(--text-dim); }
+.toggle.is-on .toggle__labels span:last-child { color: var(--accent-cyan); text-shadow: 0 0 4px rgba(127,212,255,0.4); }
+.toggle:not(.is-on) .toggle__labels span:first-child { color: var(--text-hud); }
+.channel__label { margin-top: 8px; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
+/* ---------------------------------------------------------------- */
+/* Ultra-Realistic LED Dome Bulbs (No-Child Compatibility)          */
+/* ---------------------------------------------------------------- */
+
+.channel--led { 
+  width: 90px; 
+  text-align: center; 
+}
+
+/* The metallic socket bezel holding the bulb */
+.led__socket { 
+  width: 24px; 
+  height: 24px; 
+  margin: 6px auto 0; 
+  border-radius: 50%; 
+  /* Heavy, machined metal casing bezel */
+  background: linear-gradient(135deg, #3a4656 0%, #11151c 50%, #293240 100%); 
+  position: relative;
+  box-sizing: border-box;
+  box-shadow: 
+    0 1px 1px rgba(255, 255, 255, 0.15),                /* Top edge metal highlight */
+    0 3px 6px rgba(0, 0, 0, 0.65),                       /* External drop shadow */
+    inset 0 2px 3px rgba(0, 0, 0, 0.85);                 /* Deep recess socket shadow */
+}
+
+/* The physical glass/epoxy bulb dome (OFF State) */
+.led__socket::before { 
+  content: '';
+  position: absolute;
+  inset: 3px; /* Keeps the glass bulb perfectly inside the metal bezel */
+  border-radius: 50%;
+  transition: background 0.1s ease-out, box-shadow 0.1s ease-out;
+  box-sizing: border-box;
+
+  /* Off state: Deep, cloudy, semi-translucent unlit red glass */
+  background: radial-gradient(circle at 35% 35%, #4a1210 0%, #240504 70%, #0c0201 100%);
+  box-shadow: 
+    inset 0 -2px 3px rgba(0, 0, 0, 0.7),                 /* Inner core shadow */
+    inset 0 1px 2px rgba(255, 255, 255, 0.2);            /* Micro-rim light */
+}
+
+/* Glossy glass overhead glare (Specular Highlight - remains consistent) */
+.led__socket::after { 
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  /* Glossy overhead light source reflection on the dome surface */
+  background: radial-gradient(circle at 25% 25%, rgba(255, 255, 255, 0.65) 0%, rgba(255, 255, 255, 0) 50%);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------- */
+/* Emissive Active Glowing State (ON State)                         */
+/* ---------------------------------------------------------------- */
+
+.led__socket.is-on::before {
+  /* On state: Bright glowing white-hot core fading into intense neon red */
+  background: radial-gradient(circle at 35% 35%, #ffffff 0%, #ff5e3a 20%, #e60000 65%, #660000 100%);
+  
+  /* Layered light bloom */
+  box-shadow: 
+    inset 0 -1px 2px rgba(0, 0, 0, 0.4),                 /* Retain dimensional depth at base */
+    inset 0 2px 4px rgba(255, 255, 255, 0.7),            /* Intense inner rim light flare */
+    0 0 10px rgba(255, 68, 51, 0.95),                    /* Direct light emission */
+    0 0 22px rgba(255, 68, 51, 0.45);                    /* Soft bloom spill over the bezel onto the panel */
+}
+
+/* Telemetry UI Scaling */
+#heart-ui-layer .panel-assembly {
+    --panel-scale: 0.72;                   /* JS will read this for the scale size */
+    transform-origin: top left !important; /* Forces math to calculate from top-left corners */
+}
