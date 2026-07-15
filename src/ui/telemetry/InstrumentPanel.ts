@@ -114,8 +114,29 @@ export class InstrumentPanel {
         this.root = this._build(config);
     }
 
+    // 🟢 2. ADD THIS NEW METHOD TO TRACK THE MOUSE
+    private _onMouseMove = (e: MouseEvent) => {
+        if (!this.root) return;
+        
+        // We target the inner '.panel' because it has the exact boundaries we care about
+        const panelBox = this.root.querySelector('.panel') as HTMLElement;
+        if (!panelBox) return;
+
+        const rect = panelBox.getBoundingClientRect();
+        
+        // Calculate mouse position relative to the top-left of the panel
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Update the CSS variables on the panel directly
+        panelBox.style.setProperty('--light-x', `${x}px`);
+        panelBox.style.setProperty('--light-y', `${y}px`);
+    };
+
     public mount(parent: HTMLElement) {
         parent.appendChild(this.root);
+        // 🟢 3A. START TRACKING WHEN MOUNTED
+        window.addEventListener('mousemove', this._onMouseMove);
     }
 
     private _build(config: PanelConfig): HTMLElement {
@@ -126,7 +147,7 @@ export class InstrumentPanel {
         const panel = document.createElement('div');
         panel.className = 'panel';
         panel.innerHTML = `
-      <div class="panel__bolt panel__bolt--tl"></div>
+      <div class="panel__light-spill"></div><div class="panel__bolt panel__bolt--tl"></div>
       <div class="panel__bolt panel__bolt--tr"></div>
       <div class="panel__bolt panel__bolt--bl"></div>
       <div class="panel__bolt panel__bolt--br"></div>
@@ -255,8 +276,8 @@ export class InstrumentPanel {
         const wrap = document.createElement('div');
         wrap.className = 'channel channel--led';
         wrap.innerHTML = `
-      <div class="led__socket">
-        <div class="led" data-led><div class="led__body"></div></div>
+      <div class="led__socket" data-led>
+        <div class="led"><div class="led__body"></div></div>
       </div>
       <div class="channel__label">${channel.label}</div>
     `;
@@ -269,11 +290,10 @@ export class InstrumentPanel {
     // Public API Methods
     // =====================================================================
 
-public setPosition(x: number, y: number) {
-        // We combine translate3d and scale into the same hardware-accelerated transform.
-        // It defaults to 0.40 but can be controlled via CSS.
-        this.root.style.transform = `translate3d(${x}px, ${y}px, 0) scale(var(--panel-scale, 0.40))`;
-    }
+// Inside InstrumentPanel.ts
+    public setPosition(x: number, y: number, z: number, rotationY: number) {
+        // Assuming your root element is this.el
+this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotationY}deg) scale(var(--panel-scale, 0.90))`;    }
 
     public setOpacity(opacity: number) {
         this.root.style.opacity = String(opacity);
@@ -320,12 +340,13 @@ public setPosition(x: number, y: number) {
             } else if (ref.type === 'toggle') {
                 if (ref.toggleEl) ref.toggleEl.classList.toggle('is-on', !!raw);
             } else if (ref.type === 'led') {
-                if (ref.ledEl) ref.ledEl.classList.toggle('is-lit', !!raw);
+                if (ref.ledEl) ref.ledEl.classList.toggle('is-on', !!raw);
             }
         });
     }
 
     public destroy() {
+        window.removeEventListener('mousemove', this._onMouseMove);
         this.root.remove();
         this.refs = [];
         this.current.clear();

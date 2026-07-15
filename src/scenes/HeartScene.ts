@@ -1067,7 +1067,8 @@ export function setupHeartScene(): LoopController | null {
                 // 1. Check physical intersection
                 const intersects = heartRaycaster.intersectObjects(solids, false);
                 const isIntersecting = intersects.length > 0;
-                
+				const isHoveringHeart = intersects.length > 0;
+                document.documentElement.style.setProperty('--light-active', isHoveringHeart ? '1' : '0');
                 // 2. Logic Gate
                 const isVisible = inkProgress < 0.5; 
                 
@@ -1094,13 +1095,33 @@ export function setupHeartScene(): LoopController | null {
         const PANEL_BASE_WIDTH = 530; 
         const actualPanelWidth = PANEL_BASE_WIDTH * SCALE; // 212px
 
-        const leftPanelX = window.innerWidth * 0.02; // 2% margin          
+        const leftPanelX = window.innerWidth * (-0.1); // 2% margin          
         const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
         const panelY = window.innerHeight * 0.22;      
+      // ==========================================
+        // 3D CYLINDER DISTORTION MATH
+        // ==========================================
+        const screenWidth = window.innerWidth;
+        const screenCenter = screenWidth / 2;
+        const maxRotationY = 5;  // Max inward tilt in degrees
+        const maxDepthZ = -300;   // How far it pushes back into the screen at the edges
+
+        // --- LEFT PANEL MATH ---
+        const leftNormX = (leftPanelX - screenCenter) / screenCenter; 
+        const leftRotationY = leftNormX * -maxRotationY; 
+        const leftZ = Math.abs(leftNormX) * maxDepthZ;
+
+        // --- RIGHT PANEL MATH ---
+        const rightNormX = (rightPanelX - screenCenter) / screenCenter;
+        const rightRotationY = rightNormX * -maxRotationY;
+        const rightZ = Math.abs(rightNormX) * maxDepthZ;
+
         // --- Left Viewport Panel (Scroll & Opacity Metrics) ---
         panelManager.update('telemetry-left', {
             x: leftPanelX,
             y: panelY,
+            z: leftZ,                 // <--- New Depth
+            rotationY: leftRotationY, // <--- New Rotation
             opacity: panelVisibility,
             values: {
                 heartFade: heartFade * 100,
@@ -1112,11 +1133,12 @@ export function setupHeartScene(): LoopController | null {
 
         // --- Right Viewport Panel (Raycaster & Mouse Metrics) ---
         panelManager.update('telemetry-right', {
-            x: rightPanelX - 250,
+            x: rightPanelX - 300, // (Keeping your -250 offset here)
             y: panelY,
+            z: rightZ,                  // <--- New Depth
+            rotationY: rightRotationY,  // <--- New Rotation
             opacity: panelVisibility,
             values: {
-                // targetX/Y are -1 to 1, multiplying by 100 fits the meter scale perfectly
                 lat: mouse.targetY * 100,
                 long: mouse.targetX * 100,
                 intersect: isIntersecting 

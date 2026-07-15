@@ -6,6 +6,8 @@ import { type PanelConfig, type TelemetryData } from './types';
 export interface PanelUpdatePayload {
     x?: number;
     y?: number;
+    z?: number;         // Add this
+    rotationY?: number; // Add this
     opacity?: number;
     values?: TelemetryData;
 }
@@ -49,8 +51,8 @@ export class PanelManager {
         const panel = this.panels.get(id);
         if (!panel) return;
 
-        if (payload.x !== undefined && payload.y !== undefined) {
-            panel.setPosition(payload.x, payload.y);
+        if (payload.x !== undefined && payload.y !== undefined ) {
+            panel.setPosition(payload.x, payload.y, payload.z || 0, payload.rotationY || 0);
         }
 
         if (payload.opacity !== undefined) {

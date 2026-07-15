@@ -7,13 +7,6 @@
     cursor: none !important;
 }
 
-#heart-ui-layer {
-    position: fixed;
-    inset: 0;           /* Stretches to fill the whole screen (top/left/right/bottom: 0) */
-    pointer-events: none; /* Let clicks pass through to the 3D canvas by default */
-    z-index: 10;        /* Ensures it sits ON TOP of the Three.js canvas */
-}
-
 @font-face {
   font-family: 'Unbounded';
   /* The leading slash '/' is CRITICAL. It tells Astro to look in the public folder */
