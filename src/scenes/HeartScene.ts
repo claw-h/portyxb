@@ -1,4 +1,36 @@
-import * as THREE from 'three';
+import { 
+	MeshPhysicalMaterial,
+	LineBasicMaterial,
+	Object3D,
+	Matrix4,
+	EdgesGeometry,
+	AdditiveBlending,
+	ACESFilmicToneMapping,
+	FogExp2,
+	Points,
+	AmbientLight,
+	PointLight,
+	SphereGeometry,
+	Group,
+	Float32BufferAttribute,
+	LineSegments,
+	BufferAttribute,
+	DoubleSide,
+	ShaderMaterial,
+	Box3,
+	Scene, 
+	PerspectiveCamera, 
+	BufferGeometry,
+	WebGLRenderer, 
+	Color, 
+	MeshBasicMaterial, 
+	Mesh, 
+	PlaneGeometry,
+	Vector2,
+	Vector3,
+	Raycaster
+} from 'three';
+
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -18,12 +50,12 @@ import { setHoverTarget } from '../utils/hoverTargets';
 // ---------------------------------------------------------------------------
 
 interface SliceMaterials {
-	solid: THREE.MeshPhysicalMaterial;
-	wire: THREE.MeshBasicMaterial;
-	edges: THREE.LineBasicMaterial;
+	solid: MeshPhysicalMaterial;
+	wire: MeshBasicMaterial;
+	edges: LineBasicMaterial;
 }
 
-interface SliceHolder extends THREE.Group {
+interface SliceHolder extends Group {
 	userData: {
 		baseY: number;
 		direction: number;
@@ -66,14 +98,14 @@ const TIMELINE = {
 // Geometry helpers
 // ---------------------------------------------------------------------------
 
-function mergeModelGeometry(model: THREE.Object3D): THREE.BufferGeometry[] {
-	const geometries: THREE.BufferGeometry[] = [];
-	const modelBox = new THREE.Box3();
+function mergeModelGeometry(model: Object3D): BufferGeometry[] {
+	const geometries: BufferGeometry[] = [];
+	const modelBox = new Box3();
 	model.updateWorldMatrix(true, true);
 
 	model.traverse((child) => {
-		if (!(child instanceof THREE.Mesh) || !child.geometry) return;
-		const geometry = child.geometry.clone() as THREE.BufferGeometry;
+		if (!(child instanceof Mesh) || !child.geometry) return;
+		const geometry = child.geometry.clone() as BufferGeometry;
 
 		// =========================================================
 		// DE-QUANTIZE COMPRESSED GEOMETRY
@@ -89,7 +121,7 @@ function mergeModelGeometry(model: THREE.Object3D): THREE.BufferGeometry[] {
 					if (attr.itemSize >= 2) floatArray[i * attr.itemSize + 1] = attr.getY(i);
 					if (attr.itemSize >= 3) floatArray[i * attr.itemSize + 2] = attr.getZ(i);
 				}
-				geometry.setAttribute(key, new THREE.BufferAttribute(floatArray, attr.itemSize));
+				geometry.setAttribute(key, new BufferAttribute(floatArray, attr.itemSize));
 			}
 		});
 
@@ -103,14 +135,14 @@ function mergeModelGeometry(model: THREE.Object3D): THREE.BufferGeometry[] {
 
 	if (!geometries.length) return [];
 
-	const center = new THREE.Vector3();
-	const size = new THREE.Vector3();
+	const center = new Vector3();
+	const size = new Vector3();
 	modelBox.getCenter(center);
 	modelBox.getSize(size);
 	const scale = 3.05 / Math.max(size.x, size.y, size.z);
-	const normalize = new THREE.Matrix4()
+	const normalize = new Matrix4()
 		.makeTranslation(-center.x, -center.y, -center.z)
-		.premultiply(new THREE.Matrix4().makeScale(scale, scale, scale));
+		.premultiply(new Matrix4().makeScale(scale, scale, scale));
 
 	return geometries.map((geometry) => {
 		geometry.applyMatrix4(normalize);
@@ -119,8 +151,8 @@ function mergeModelGeometry(model: THREE.Object3D): THREE.BufferGeometry[] {
 	});
 }
 
-function buildSliceGeometry(geometries: THREE.BufferGeometry[], sliceIndex: number): THREE.BufferGeometry {
-	const box = new THREE.Box3();
+function buildSliceGeometry(geometries: BufferGeometry[], sliceIndex: number): BufferGeometry {
+	const box = new Box3();
 	geometries.forEach((g) => {
 		g.computeBoundingBox();
 		box.union(g.boundingBox!);
@@ -141,19 +173,57 @@ function buildSliceGeometry(geometries: THREE.BufferGeometry[], sliceIndex: numb
 		}
 	});
 
-	const sliceGeometry = new THREE.BufferGeometry();
-	sliceGeometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+	const sliceGeometry = new BufferGeometry();
+	sliceGeometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
 	sliceGeometry.computeVertexNormals();
 	sliceGeometry.computeBoundingBox();
 	return sliceGeometry;
+}
+
+function runWorkerSlicing(
+	geometries: BufferGeometry[],
+	group: Group,
+	onDone: (result: SliceHolder[]) => void
+) {
+	const box = new Box3();
+	geometries.forEach((g) => {
+		g.computeBoundingBox();
+		box.union(g.boundingBox!);
+	});
+	
+	const minY = box.min.y;
+	const maxY = box.max.y;
+	const vertexBuffers = geometries.map(g => g.attributes.position.array as Float32Array);
+
+	// Vite understands this exact syntax to compile and package your worker file
+	const worker = new Worker(new URL('./heartWorker.ts', import.meta.url), { type: 'module' });
+	
+	worker.onmessage = async (e) => {
+		const { slicedBuffers } = e.data;
+		
+		// Instantly free up the massive un-sliced parent geometry memory
+		geometries.forEach(g => g.dispose()); 
+		
+		const resultSlices = await buildSlicesFromBuffers(slicedBuffers, group);
+		onDone(resultSlices);
+		worker.terminate();
+	};
+
+	// Transfer ownership of the raw underlying buffers so there is 0% copying overhead
+	worker.postMessage({
+		vertexBuffers,
+		minY,
+		maxY,
+		sliceCount: SLICE_COUNT
+	}, vertexBuffers.map(b => b.buffer));
 }
 
 // =========================================================
 // UNIFORM REVEAL & SPOTLIGHT CONFIGURATION
 // =========================================================
 const spotlightConfig = {
-	pos: new THREE.Vector3(0, 0, 0),
-	targetPos: new THREE.Vector3(0, 0, 0),
+	pos: new Vector3(0, 0, 0),
+	targetPos: new Vector3(0, 0, 0),
 	intensity: 0,
 	targetIntensity: 0,
 	radius: 1.35, // Premium wider spread for a softer volumetric falloff
@@ -165,7 +235,7 @@ const spotlightUniforms = {
 	uScannerIntensity: { value: spotlightConfig.intensity }
 };
 
-const injectSpotlightReveal = (shader: THREE.Shader) => {
+const injectSpotlightReveal = (shader: any) => {
 	shader.uniforms.uScannerPos = spotlightUniforms.uScannerPos;
 	shader.uniforms.uScannerRadius = spotlightUniforms.uScannerRadius;
 	shader.uniforms.uScannerIntensity = spotlightUniforms.uScannerIntensity;
@@ -206,70 +276,76 @@ const injectSpotlightReveal = (shader: THREE.Shader) => {
 	);
 };
 
-async function buildSlices(
-	geometries: THREE.BufferGeometry[],
-	group: THREE.Group,
+// Replace your old buildSlices function with this:
+async function buildSlicesFromBuffers(
+	slicedBuffers: Float32Array[],
+	group: Group,
 ): Promise<SliceHolder[]> {
 	const slices: SliceHolder[] = [];
 
-	for (let i = 0; i < SLICE_COUNT; i++) {
-		await new Promise<void>((resolve) => setTimeout(resolve, 20));
-		const sliceGeometry = buildSliceGeometry(geometries, i);
-		if (!sliceGeometry.attributes.position?.count) continue;
+	// 1. Create the THREE master materials ONCE outside the loop
+	const solidMaterial = new MeshPhysicalMaterial({
+		color: 0x07162c,
+		emissive: 0x1c2e4d,
+		emissiveIntensity: 0.08,
+		transparent: true,
+		opacity: 0.22, 
+		roughness: 0.18,
+		metalness: 0.06,
+		transmission: 0.72,
+		thickness: 1.8,
+		clearcoat: 0.82,
+		clearcoatRoughness: 0.12,
+		reflectivity: 0.38,
+		ior: 1.34,
+		side: DoubleSide,
+		depthWrite: false,
+	});
+
+	const wireMaterial = new MeshBasicMaterial({
+		color: 0xc6e4ff,
+		transparent: true,
+		opacity: 0.18, 
+		wireframe: true,
+		depthWrite: false,
+	});
+
+	const edgeMaterial = new LineBasicMaterial({
+		color: 0x76cdff,
+		transparent: true,
+		opacity: 0.12, 
+	});
+
+	solidMaterial.onBeforeCompile = injectSpotlightReveal;
+	wireMaterial.onBeforeCompile = injectSpotlightReveal;
+	edgeMaterial.onBeforeCompile = injectSpotlightReveal;
+
+	// 2. Map through the buffers using the shared materials
+	for (let i = 0; i < slicedBuffers.length; i++) {
+		const buffer = slicedBuffers[i];
+		if (!buffer || buffer.length === 0) continue;
+
+		const sliceGeometry = new BufferGeometry();
+		sliceGeometry.setAttribute('position', new BufferAttribute(buffer, 3));
+		sliceGeometry.computeVertexNormals();
 		sliceGeometry.computeBoundingBox();
 
-		const solidMaterial = new THREE.MeshPhysicalMaterial({
-			color: 0x07162c,
-			emissive: 0x1c2e4d,
-			emissiveIntensity: 0.08,
-			transparent: true,
-			opacity: 0.22, // Reduced maximum opacity for a stealthier look
-			roughness: 0.18,
-			metalness: 0.06,
-			transmission: 0.72,
-			thickness: 1.8,
-			clearcoat: 0.82,
-			clearcoatRoughness: 0.12,
-			reflectivity: 0.38,
-			ior: 1.34,
-			side: THREE.DoubleSide,
-			depthWrite: false,
-		});
-		const wireMaterial = new THREE.MeshBasicMaterial({
-			color: 0xc6e4ff,
-			transparent: true,
-			opacity: 0.18, // Reduced maximum opacity
-			wireframe: true,
-			depthWrite: false,
-		});
-		const edgeMaterial = new THREE.LineBasicMaterial({
-			color: 0x76cdff,
-			transparent: true,
-			opacity: 0.12, // Reduced maximum opacity
-		});
-
-		// Apply the shared spotlight injection directly into material shader compilations
-		solidMaterial.onBeforeCompile = injectSpotlightReveal;
-		wireMaterial.onBeforeCompile = injectSpotlightReveal;
-		edgeMaterial.onBeforeCompile = injectSpotlightReveal;
-
-		const holder = new THREE.Group() as SliceHolder;
+		const holder = new Group() as SliceHolder;
 		holder.userData.baseY = 0;
-		holder.userData.direction = i - (SLICE_COUNT - 1) / 2;
+		holder.userData.direction = i - (slicedBuffers.length - 1) / 2;
 		holder.userData.phase = i * 0.34;
 		holder.userData.index = i;
 
-		const solid = new THREE.Mesh(sliceGeometry, solidMaterial);
-		const wire = new THREE.Mesh(sliceGeometry.clone(), wireMaterial);
-		const edges = new THREE.LineSegments(new THREE.EdgesGeometry(sliceGeometry, 22), edgeMaterial);
+		// Reuse the single master material references
+		const solid = new Mesh(sliceGeometry, solidMaterial);
+		const wire = new Mesh(sliceGeometry.clone(), wireMaterial);
+		const edges = new LineSegments(new EdgesGeometry(sliceGeometry, 22), edgeMaterial);
 
 		wire.scale.setScalar(1.006);
 		edges.scale.setScalar(1.011);
 
-		// Removed glitchy xRayMesh clone layers completely
 		holder.add(solid, wire, edges);
 		holder.userData.materials = { solid: solidMaterial, wire: wireMaterial, edges: edgeMaterial };
-		holder.position.y = 0;
 		group.add(holder);
 		slices.push(holder);
 	}
@@ -292,7 +368,7 @@ function evaluateScrollState(progress: number): ScrollState {
 }
 
 function createWebGLFireSystem(fireCount = 200) {
-	const geometry = new THREE.BufferGeometry();
+	const geometry = new BufferGeometry();
 	const positions = new Float32Array(fireCount * 3);
 	const velocities = new Float32Array(fireCount * 3);
 	const lifetimes = new Float32Array(fireCount); 
@@ -316,12 +392,12 @@ function createWebGLFireSystem(fireCount = 200) {
 		sizes[i] = Math.random() * 2.0 + 1.0;
 	}
 
-	geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-	geometry.setAttribute('aVelocity', new THREE.BufferAttribute(velocities, 3));
-	geometry.setAttribute('aLife', new THREE.BufferAttribute(lifetimes, 1));
-	geometry.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+	geometry.setAttribute('position', new BufferAttribute(positions, 3));
+	geometry.setAttribute('aVelocity', new BufferAttribute(velocities, 3));
+	geometry.setAttribute('aLife', new BufferAttribute(lifetimes, 1));
+	geometry.setAttribute('aSize', new BufferAttribute(sizes, 1));
 
-	const material = new THREE.ShaderMaterial({
+	const material = new ShaderMaterial({
 		uniforms: {
 			uTime: { value: 0 },
 			uIntensity: { value: 0.0 }
@@ -370,11 +446,11 @@ function createWebGLFireSystem(fireCount = 200) {
 			}
 		`,
 		transparent: true,
-		blending: THREE.AdditiveBlending,
+		blending: AdditiveBlending,
 		depthWrite: false,
 	});
 
-	const points = new THREE.Points(geometry, material);
+	const points = new Points(geometry, material);
 
 	const update = (time: number, intensity: number) => {
 		material.uniforms.uTime.value = time * 0.001;
@@ -412,8 +488,8 @@ function createWebGLFireSystem(fireCount = 200) {
 // ---------------------------------------------------------------------------
 
 export function setupHeartScene(): LoopController | null {
-	const section = document.querySelector<HTMLElement>('[data-hero]');
-	const canvas = document.querySelector<HTMLCanvasElement>('[data-heart-canvas]');
+	const section = document.querySelector<HTMLElement>('[data-hero]') as HTMLElement;
+	const canvas = document.querySelector<HTMLCanvasElement>('[data-heart-canvas]') as HTMLElement;
 	const progressContainer = document.querySelector<HTMLElement>('.hero-progress');
 	const progressFill = document.querySelector<HTMLElement>('[data-hero-progress]');
 	const depthReadout = document.querySelector<HTMLElement>('[data-depth-readout]');
@@ -423,6 +499,11 @@ export function setupHeartScene(): LoopController | null {
 	const fillVentricle = document.querySelector<HTMLElement>('.gel-fill--ventricle');
 	const borderSvg = document.querySelector<SVGSVGElement>('.hero-border-svg');
 	const borderPaths = document.querySelectorAll<SVGPathElement>('.hero-border-path');
+	
+
+	const heroCopyEl = document.querySelector<HTMLElement>('[data-hero-copy]');
+	const lineOne = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--one');
+	const lineTwo = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--two');
 
 	let pathLength = 0;
 	let pTop = 0;
@@ -554,29 +635,29 @@ export function setupHeartScene(): LoopController | null {
     // Reticle hover detection — raycast against the heart's solid slice
     // meshes each frame and report hits to the shared hover registry.
     const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
-    const heartRaycaster = new THREE.Raycaster();
-    const heartPointerNdc = new THREE.Vector2();
+    const heartRaycaster = new Raycaster();
+    const heartPointerNdc = new Vector2();
 
-	const scene = new THREE.Scene();
-	scene.fog = new THREE.FogExp2(0x020308, 0.035);
+	const scene = new Scene();
+	scene.fog = new FogExp2(0x020308, 0.035);
 
-	const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+	const camera = new PerspectiveCamera(38, 1, 0.1, 100);
 	camera.position.set(0, 0.02, 6.9);
 
-	const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
+	const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
 	renderer.localClippingEnabled = true;
 	renderer.setClearColor(0x000000, 0); 
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
-	renderer.toneMapping = THREE.ACESFilmicToneMapping;
+	renderer.toneMapping = ACESFilmicToneMapping;
 	renderer.toneMappingExposure = 1.0;
 
 	const renderPass = new RenderPass(scene, camera);
-	renderPass.clearColor = new THREE.Color(0, 0, 0);
+	renderPass.clearColor = new Color(0, 0, 0);
 	renderPass.clearAlpha = 0;
 
 	const bloomPass = new UnrealBloomPass(
-		new THREE.Vector2(window.innerWidth, window.innerHeight),
+		new Vector2(window.innerWidth, window.innerHeight),
 		1.2, 
 		0.4, 
 		0.9  
@@ -674,25 +755,25 @@ export function setupHeartScene(): LoopController | null {
 	const fireSystem = createWebGLFireSystem(250); 
 	scene.add(fireSystem.mesh);
 
-	const heartGroup = new THREE.Group();
+	const heartGroup = new Group();
 	scene.add(heartGroup);
 
 	// Standard Environmental Lights
-	const ambient = new THREE.AmbientLight(0x4da2ff, 1.8);
-	const key = new THREE.PointLight(0xa6d8ff, 95, 14);
+	const ambient = new AmbientLight(0x4da2ff, 1.8);
+	const key = new PointLight(0xa6d8ff, 95, 14);
 	key.position.set(3, 2.8, 4);
-	const blue = new THREE.PointLight(0x00aaff, 45, 12);
+	const blue = new PointLight(0x00aaff, 45, 12);
 	blue.position.set(-3, -1.8, 3);
 	scene.add(ambient, key, blue);
 
 	// Dedicated hardware hardware spotlight source for real volumetric lighting glare
-	const spotlightPointLight = new THREE.PointLight(0x8fdcff, 0, 5);
+	const spotlightPointLight = new PointLight(0x8fdcff, 0, 5);
 	scene.add(spotlightPointLight);
 
-	const gridMaterial = new THREE.ShaderMaterial({
+	const gridMaterial = new ShaderMaterial({
 		uniforms: {
 			uTime: { value: 0 },
-			uGlowColor: { value: new THREE.Color(0x6b8c96) } 
+			uGlowColor: { value: new Color(0x6b8c96) } 
 		},
 		vertexShader: `
 			varying vec2 vUv;
@@ -735,37 +816,40 @@ export function setupHeartScene(): LoopController | null {
 			}
 		`,
 		transparent: true,
-		blending: THREE.AdditiveBlending,
+		blending: AdditiveBlending,
 		depthWrite: false
 	});
 	
-	const screenGrid = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), gridMaterial);
+	const screenGrid = new Mesh(new PlaneGeometry(80, 80), gridMaterial);
 	screenGrid.position.z = -15; 
 	scene.add(screenGrid);
 	let slices: SliceHolder[] = [];
 
+	// Find this block inside setupHeartScene():
 	const loader = new GLTFLoader();
-
 	loader.setMeshoptDecoder(MeshoptDecoder);
 
 	loader.load(
 		'/heart-meshopt.glb',
-		async (gltf) => {
-			slices = await buildSlices(mergeModelGeometry(gltf.scene), heartGroup);
-			renderer.compile(scene, camera);
-			markReady('heart');
+		(gltf) => {
+			runWorkerSlicing(mergeModelGeometry(gltf.scene), heartGroup, (result) => {
+				slices = result;
+				renderer.compile(scene, camera);
+				markReady('heart');
+			});
 		},
 		undefined,
-		async () => {
-			const fallback = new THREE.SphereGeometry(1.2, 64, 32).toNonIndexed();
+		() => {
+			const fallback = new SphereGeometry(1.2, 64, 32).toNonIndexed();
 			fallback.scale(0.82, 1.16, 0.72);
-			slices = await buildSlices([fallback], heartGroup);
-			fallback.dispose(); 
-			renderer.compile(scene, camera);
-			markReady('heart');
+			runWorkerSlicing([fallback], heartGroup, (result) => {
+				slices = result;
+				renderer.compile(scene, camera);
+				markReady('heart');
+			});
 		},
 	);
-
+	
 	function applyDOMScrollState(state: ScrollState): void {
         const { progress, heartFade, hudProgress, terminalProgress } = state;
     
@@ -849,10 +933,6 @@ export function setupHeartScene(): LoopController | null {
         section.classList.toggle('is-terminal', terminalProgress > 0.35);
     
         // ── 5. Typography Sequence ────────────────────────────────────────────
-        const heroCopyEl = document.querySelector<HTMLElement>('[data-hero-copy]');
-        const lineOne = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--one');
-        const lineTwo = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--two');
-    
         if (heroCopyEl && lineOne && lineTwo) {
             heroCopyEl.style.opacity = progress >= SNAP_OUT ? '1' : '0';
             
@@ -997,7 +1077,7 @@ export function setupHeartScene(): LoopController | null {
                 return;
             }
 
-            const slicePos = new THREE.Vector3();
+            const slicePos = new Vector3();
             targetSlice.getWorldPosition(slicePos);
             slicePos.x += isRightSide ? 1.8 : -1.8; 
             slicePos.y += 0.2;  
@@ -1045,7 +1125,7 @@ export function setupHeartScene(): LoopController | null {
 			setHoverTarget('heart', false);
 			renderer.dispose();
 			scene.traverse((obj) => {
-				if (obj instanceof THREE.Mesh) {
+				if (obj instanceof Mesh) {
 					obj.geometry.dispose();
 					if (Array.isArray(obj.material)) {
 						obj.material.forEach((m) => m.dispose());

@@ -6,7 +6,7 @@
 // This replaces the old `window.__NEURAL_STATE` pattern, which had two real
 // bugs: (1) nothing in the codebase ever *created* that object, so every
 // read of it was silently a no-op and the preloader could never legitimately
-// complete; and (2) it leaned on `THREE.DefaultLoadingManager`'s onLoad,
+// complete; and (2) it leaned on `DefaultLoadingManager`'s onLoad,
 // which fires whenever its internal queue drains to zero — if one scene's
 // loader finishes before another scene's loader has even started (e.g. the
 // dream canvas used to defer its GLTF fetch behind requestIdleCallback), the
@@ -95,7 +95,7 @@ if (typeof document !== 'undefined') {
 // cached repeat visit could call `completeLoading()` mid-boot, cutting the
 // power-on animation off and immediately reversing into power-down, which
 // reads as broken rather than intentional. Tune or delete freely.
-const MIN_SPLASH_MS = 2500;
+const MIN_SPLASH_MS = 500;
 if (typeof window !== 'undefined') {
 	window.setTimeout(() => markReady('minSplash'), MIN_SPLASH_MS);
 }

@@ -1,4 +1,28 @@
-import * as THREE from 'three';
+import { 
+	Group,
+	BufferAttribute,
+	DoubleSide,
+	ShaderMaterial,
+	Box3,
+	BoxGeometry,
+	Matrix4,
+	LinearFilter,
+	Scene, 
+	PerspectiveCamera, 
+	BufferGeometry,
+	WebGLRenderer, 
+	Color, 
+	MeshBasicMaterial, 
+	Mesh, 
+	PlaneGeometry,
+	Vector2,
+	Vector3,
+	CanvasTexture,
+	Euler,
+	Raycaster
+} from 'three';
+
+
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -23,7 +47,7 @@ interface Glyph {
 interface GridInstanceState {
 	ix: number; iy: number; baseX: number; baseY: number; mirrorX: number;
 	solidZ: number; baseScale: number; wireScale: number; wireTiltX: number; wireTiltY: number;
-	mesh: THREE.Mesh;
+	mesh: Mesh;
 }
  
 interface MouseState {
@@ -49,7 +73,16 @@ const STAIR_TARGET_SIZE = 12;
 // Single source of truth for the staircase's base orientation. Previously
 // this was two magic numbers (0.4, -0.4) duplicated in both the instance
 // builder and the render loop — now it's one named value used everywhere.
-const STAIR_ROTATION = new THREE.Euler(0, 1.57, 0);
+const STAIR_ROTATION = new Euler(0, 1.57, 0);
+
+// Spotlight tracking configuration
+const spotlightConfig = {
+	pos: new Vector3(0, 0, 0),
+	targetPos: new Vector3(0, 0, 0),
+	intensity: 0,
+	targetIntensity: 0,
+	radius: 5.5, // Scaled for staircase proportion
+};
  
 // ---------------------------------------------------------------------------
 // Viewport Scroll Math
@@ -71,7 +104,7 @@ const CustomLensShader = {
 		uVelocity: { value: 0.0 },
 		uMouseSpeed: { value: 0.0 },
 		uTime: { value: 0.0 },
-		uResolution: { value: new THREE.Vector2(1, 1) }
+		uResolution: { value: new Vector2(1, 1) }
 	},
 	vertexShader: `
 		varying vec2 vUv;
@@ -198,7 +231,8 @@ function buildGlyphs(width: number, height: number, previousGlyphs?: Glyph[]): G
 	});
 	return glyphs;
 }
-async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
+
+async function loadDreamGeometry(): Promise<BufferGeometry> {
 	return new Promise((resolve) => {
 		const loader = new GLTFLoader();
         
@@ -208,11 +242,11 @@ async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
 		loader.load(
 			'/staircase-meshopt.glb', // <-- Ensure this is your compressed file name
 			(gltf) => {
-				let extractedGeo: THREE.BufferGeometry | null = null;
+				let extractedGeo: BufferGeometry | null = null;
  
 				gltf.scene.traverse((child) => {
-					if (child instanceof THREE.Mesh && child.geometry && !extractedGeo) {
-						extractedGeo = child.geometry.clone() as THREE.BufferGeometry;
+					if (child instanceof Mesh && child.geometry && !extractedGeo) {
+						extractedGeo = child.geometry.clone() as BufferGeometry;
 
 						// =========================================================
 						// 1. DE-QUANTIZE FIRST
@@ -227,7 +261,7 @@ async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
 									if (attr.itemSize >= 2) floatArray[i * attr.itemSize + 1] = attr.getY(i);
 									if (attr.itemSize >= 3) floatArray[i * attr.itemSize + 2] = attr.getZ(i);
 								}
-								extractedGeo!.setAttribute(key, new THREE.BufferAttribute(floatArray, attr.itemSize));
+								extractedGeo!.setAttribute(key, new BufferAttribute(floatArray, attr.itemSize));
 							}
 						});
 
@@ -237,8 +271,8 @@ async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
 						// =========================================================
 						extractedGeo.computeBoundingBox();
 						const box = extractedGeo.boundingBox!;
-						const center = box.getCenter(new THREE.Vector3());
-						const size = box.getSize(new THREE.Vector3());
+						const center = box.getCenter(new Vector3());
+						const size = box.getSize(new Vector3());
 						const maxDim = Math.max(size.x, size.y, size.z);
 						const scale = STAIR_TARGET_SIZE / maxDim; 
 
@@ -250,10 +284,10 @@ async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
 						extractedGeo.computeVertexNormals();
 					}
 				});
-				resolve(extractedGeo || new THREE.BoxGeometry(2.5, 2.5, 2.5));
+				resolve(extractedGeo || new BoxGeometry(2.5, 2.5, 2.5));
 			},
 			undefined,
-			() => resolve(new THREE.BoxGeometry(2.5, 2.5, 2.5))
+			() => resolve(new BoxGeometry(2.5, 2.5, 2.5))
 		);
 	});
 }
@@ -261,9 +295,9 @@ async function loadDreamGeometry(): Promise<THREE.BufferGeometry> {
 // ---------------------------------------------------------------------------
 // 3D Premium CRT Background Plane
 // ---------------------------------------------------------------------------
-function buildCRTBackground(scene: THREE.Scene) {
-	const geo = new THREE.PlaneGeometry(150, 150);
-	const mat = new THREE.ShaderMaterial({
+function buildCRTBackground(scene: Scene) {
+	const geo = new PlaneGeometry(150, 150);
+	const mat = new ShaderMaterial({
 		uniforms: { uTime: { value: 0 } },
 		depthWrite: false,
 		vertexShader: `
@@ -290,7 +324,7 @@ function buildCRTBackground(scene: THREE.Scene) {
 		`
 	});
 	
-	const mesh = new THREE.Mesh(geo, mat);
+	const mesh = new Mesh(geo, mat);
 	mesh.position.z = -40;
 	scene.add(mesh);
 	
@@ -324,23 +358,23 @@ function buildCRTBackground(scene: THREE.Scene) {
 // chromatic dispersion. The solid mesh stays geometrically clean and only
 // gets a subtle fresnel rim so its silhouette reads, not its faces.
  
-function buildStaircaseTriptych(scene: THREE.Scene, baseGeo: THREE.BufferGeometry, camera: THREE.PerspectiveCamera) {
-	const masterGroup = new THREE.Group();
+function buildStaircaseTriptych(scene: Scene, baseGeo: BufferGeometry, camera: PerspectiveCamera) {
+	const masterGroup = new Group();
  
 	baseGeo.computeBoundingBox();
 	const rawHalfWidth = baseGeo.boundingBox ? (baseGeo.boundingBox.max.x - baseGeo.boundingBox.min.x) / 2 : 0;
-	const rotatedBoundingBox = new THREE.Box3();
+	const rotatedBoundingBox = new Box3();
 	if (baseGeo.boundingBox) {
-		const rotMatrix = new THREE.Matrix4().makeRotationFromEuler(STAIR_ROTATION);
+		const rotMatrix = new Matrix4().makeRotationFromEuler(STAIR_ROTATION);
 		const corners = [
-			new THREE.Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.min.z),
-			new THREE.Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.max.z),
-			new THREE.Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.min.z),
-			new THREE.Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.max.z),
-			new THREE.Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.min.z),
-			new THREE.Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.max.z),
-			new THREE.Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.min.z),
-			new THREE.Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.max.z)
+			new Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.min.z),
+			new Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.max.z),
+			new Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.min.z),
+			new Vector3(baseGeo.boundingBox.min.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.max.z),
+			new Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.min.z),
+			new Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.min.y, baseGeo.boundingBox.max.z),
+			new Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.min.z),
+			new Vector3(baseGeo.boundingBox.max.x, baseGeo.boundingBox.max.y, baseGeo.boundingBox.max.z)
 		];
 		corners.forEach((corner) => corner.applyMatrix4(rotMatrix));
 		rotatedBoundingBox.setFromPoints(corners);
@@ -350,11 +384,14 @@ function buildStaircaseTriptych(scene: THREE.Scene, baseGeo: THREE.BufferGeometr
 	const wireUniforms = {
 		uTime: { value: 0 },
 		uScroll: { value: 0 },
-		uMouseSpeed: { value: 0 }
+		uMouseSpeed: { value: 0 },
+		uScannerPos: { value: spotlightConfig.pos },
+		uScannerRadius: { value: spotlightConfig.radius },
+		uScannerIntensity: { value: spotlightConfig.intensity }
 	};
  
 	function makeWireMaterial(side: number) {
-		return new THREE.ShaderMaterial({
+		return new ShaderMaterial({
 			uniforms: {
 				...wireUniforms,
 				uSide: { value: side },
@@ -364,12 +401,13 @@ function buildStaircaseTriptych(scene: THREE.Scene, baseGeo: THREE.BufferGeometr
 			wireframe: true,
 			transparent: true,
 			depthWrite: false,
-			side: THREE.DoubleSide,
+			side: DoubleSide,
 			vertexShader: `
 				uniform float uSide;
 				uniform float uTime;
 				uniform float uReflection;
 				varying vec3 vPosition;
+				varying vec3 vWorldPos;
 				varying float vEdgeMask;
 				varying float vSide;
 				varying float vReflection;
@@ -386,47 +424,87 @@ function buildStaircaseTriptych(scene: THREE.Scene, baseGeo: THREE.BufferGeometr
 					pos.y += uReflection * sin(position.x * 4.8 + uTime * 2.0) * 0.14;
 					pos.x += uReflection * cos(position.y * 5.6 + uTime * 2.4) * 0.065;
 					pos.z += uReflection * sin(position.x * 1.8 + uTime * 1.5) * 0.05;
-					gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+
+					vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+					gl_Position = projectionMatrix * viewMatrix * vec4(vWorldPos, 1.0);
 				}
 			`,
 			fragmentShader: `
-				uniform float uTime;
-				uniform float uScroll;
-				uniform float uMouseSpeed;
-				uniform float uReflection;
-				varying vec3 vPosition;
-				varying float vEdgeMask;
-				varying float vSide;
-				varying float vReflection;
- 
-				void main() {
-					vec3 colorBase = vec3(0.05, 0.2, 0.4);
-					vec3 colorActive = vec3(0.4, 0.8, 0.9);
-					float pulse = sin(vPosition.x * 1.0 + vPosition.y * 1.0 - uTime * 1.2) * 0.5 + 0.5;
-					float activity = clamp(0.15 + (uScroll * 0.8) + (uMouseSpeed * 0.005) + (pulse * 0.3) + (vEdgeMask * 0.5), 0.0, 1.0);
-					vec3 finalColor = mix(colorBase, colorActive, activity);
-					finalColor += vec3(max(vSide, 0.0), 0.0, max(-vSide, 0.0)) * vEdgeMask * 0.22;
-					float centerMask = 1.0 - clamp(abs(vSide), 0.0, 1.0);
-					float waterTint = uReflection * 0.65;
-					finalColor = mix(finalColor, vec3(0.035, 0.085, 0.14), waterTint);
-					finalColor = mix(finalColor, vec3(0.17, 0.32, 0.42), centerMask * 0.22);
-					float ripple = sin(vPosition.x * 4.3 + uTime * 1.9) * cos(vPosition.y * 3.7 + uTime * 2.3) * 0.08;
-					finalColor += ripple * uReflection * 0.12;
-					float alpha = mix(0.14, 0.65, activity);
-					alpha *= mix(1.0, 0.7, vReflection);
-					alpha *= 1.0 - (vReflection * 0.30);
-					alpha *= 0.95 + (0.05 * (1.0 - vReflection));
-					alpha *= mix(1.0, 0.86, centerMask);
-					gl_FragColor = vec4(finalColor, alpha);
-				}
-			`
+					uniform float uTime;
+					uniform float uScroll;
+					uniform float uMouseSpeed;
+					uniform float uReflection;
+					uniform vec3 uScannerPos;
+					uniform float uScannerRadius;
+					uniform float uScannerIntensity;
+					
+					varying vec3 vPosition;
+					varying vec3 vWorldPos;
+					varying float vEdgeMask;
+					varying float vSide;
+					varying float vReflection;
+
+					void main() {
+						// --- BASE COLOR RENDER ---
+						vec3 colorBase = vec3(0.05, 0.2, 0.4);
+						vec3 colorActive = vec3(0.4, 0.8, 0.9);
+						
+						float pulse = sin(vPosition.x * 1.0 + vPosition.y * 1.0 - uTime * 1.2) * 0.5 + 0.5;
+						float activity = clamp(0.15 + (uScroll * 0.8) + (uMouseSpeed * 0.005) + (pulse * 0.3) + (vEdgeMask * 0.5), 0.0, 1.0);
+						
+						vec3 finalColor = mix(colorBase, colorActive, activity);
+						finalColor += vec3(max(vSide, 0.0), 0.0, max(-vSide, 0.0)) * vEdgeMask * 0.22;
+						
+						float centerMask = 1.0 - clamp(abs(vSide), 0.0, 1.0);
+						float waterTint = uReflection * 0.65;
+						
+						finalColor = mix(finalColor, vec3(0.035, 0.085, 0.14), waterTint);
+						finalColor = mix(finalColor, vec3(0.17, 0.32, 0.42), centerMask * 0.22);
+						
+						float ripple = sin(vPosition.x * 4.3 + uTime * 1.9) * cos(vPosition.y * 3.7 + uTime * 2.3) * 0.08;
+						finalColor += ripple * uReflection * 0.12;
+
+						// --- NEW: FOG WASH ---
+						// Wash out the unlit areas with a deep background fog color so it looks buried
+						vec3 fogColor = vec3(0.02, 0.05, 0.08); 
+						finalColor = mix(finalColor, fogColor, centerMask * 0.85);
+
+						// --- NEW: WIDE SPOTLIGHT CUTTING THROUGH FOG ---
+						float shaderDist = distance(vWorldPos, uScannerPos);
+						float lightIntensity = uScannerIntensity * smoothstep(0.5, 1.0, centerMask);
+						
+						vec3 volumetricColor = vec3(0.55, 0.88, 1.0);
+						
+						// Lowering the power (was 2.5, now 1.2) makes the light falloff softer,
+						// spreading the light further through the "fog" volume (higher FOV perception)
+						float volumetricFalloff = pow(1.0 - clamp(shaderDist / uScannerRadius, 0.0, 1.0), 1.2);
+						
+						// Blast the light onto the model, blowing out the fog
+						finalColor += volumetricColor * volumetricFalloff * lightIntensity * 3.5;
+
+						// --- NEW: REDUCED OPACITY & LIGHT REVEAL ---
+						// Dropped base alpha ranges (was 0.14/0.65, now 0.06/0.25)
+						float alpha = mix(0.06, 0.25, activity);
+						alpha *= mix(1.0, 0.7, vReflection);
+						alpha *= 1.0 - (vReflection * 0.30);
+						alpha *= 0.95 + (0.05 * (1.0 - vReflection));
+						
+						// Drop the central hero model's opacity even further to push it deep into the fog
+						alpha *= mix(1.0, 0.25, centerMask); 
+						
+						// The volumetric light dramatically cuts through by restoring the opacity locally
+						alpha = mix(alpha, alpha + (volumetricFalloff * lightIntensity * 1.8), 0.85);
+						
+						gl_FragColor = vec4(finalColor, clamp(alpha, 0.0, 1.0));
+					}
+				`
 		});
 	}
  
 	const mirror = [1, -1, -1];
 	const side = [0, -1, 1];
  	const instances: GridInstanceState[] = side.map((sideValue, i) => {
-		const mesh = new THREE.Mesh(baseGeo, makeWireMaterial(sideValue));
+		const mesh = new Mesh(baseGeo, makeWireMaterial(sideValue));
 		mesh.frustumCulled = false;
 		mesh.matrixAutoUpdate = true;
 		mesh.position.set(0, 0, 0);
@@ -571,27 +649,41 @@ export function setupDreamCanvas(): LoopController | null {
 	let releaseResources: (() => void) | null = null;
  
 	// 1. Build the scene instantly, but keep it dormant
-const initHeavyLifting = async () => {
+	const initHeavyLifting = async () => {
 	if (isDestroyed) {
 		markReady('dream');
 		return;
 	}
-
-	await document.fonts.ready;
+	
+	// 1. DONT await the font load here! Let it happen asynchronously in the background.
+	document.fonts.load('500 56px "Unbounded"').then(() => {
+		// 2. This runs LATER, whenever the browser finally downloads the font.
+		// Re-measure and rebuild the glyphs with the correct Unbounded metrics.
+		if (!isDestroyed && typeof lastWidth !== 'undefined') {
+			glyphs = buildGlyphs(lastWidth, lastHeight);
+			frameNeedsGlyphRedraw = true;
+			canvasWasDrawn = true;
+		}
+	}).catch(err => console.warn('Canvas font loaded with fallback', err));
+	
+	// 3. Immediately move on to building the WebGL scene so we don't block the preloader!
+	
 	
 	const bufferCanvas = document.createElement('canvas');
+	
 	const bctx = bufferCanvas.getContext('2d');
 	if (!bctx) {
 		markReady('dream');
 		return;
 	}
 
-const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: false, powerPreference: 'high-performance' });	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	const renderer = new WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: false, powerPreference: 'high-performance' });	
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-	const scene = new THREE.Scene();
-	scene.background = new THREE.Color(0x000000);
+	const scene = new Scene();
+	scene.background = new Color(0x000000);
 
-	const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+	const camera = new PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 	camera.position.z = 2;
 
 	const { mat: crtMaterial, geo: crtGeometry } = buildCRTBackground(scene);
@@ -608,12 +700,12 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 	
 	renderer.setSize(initialWidth, initialHeight, false);
 
-	let activeTexture = new THREE.CanvasTexture(bufferCanvas);
-	activeTexture.minFilter = THREE.LinearFilter;
-	activeTexture.magFilter = THREE.LinearFilter;
+	let activeTexture = new CanvasTexture(bufferCanvas);
+	activeTexture.minFilter = LinearFilter;
+	activeTexture.magFilter = LinearFilter;
 
-	const textMaterial = new THREE.MeshBasicMaterial({ map: activeTexture, transparent: true, depthWrite: false });
-	const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), textMaterial);
+	const textMaterial = new MeshBasicMaterial({ map: activeTexture, transparent: true, depthWrite: false });
+	const textPlane = new Mesh(new PlaneGeometry(10, 10), textMaterial);
 
 	const dist = 2.5;
 	const vFov = (camera.fov * Math.PI) / 180;
@@ -626,7 +718,7 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 	const composer = new EffectComposer(renderer);
 	composer.addPass(new RenderPass(scene, camera));
 
-	const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.18, 0.5, 0.28);
+	const bloomPass = new UnrealBloomPass(new Vector2(window.innerWidth, window.innerHeight), 0.18, 0.5, 0.28);
 	composer.addPass(bloomPass);
 
 	const lensPass = new ShaderPass(CustomLensShader);
@@ -639,6 +731,8 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 	let lastWidth = initialWidth;
 	let lastHeight = initialHeight;
 	let frameNeedsGlyphRedraw = true;
+
+	let canvasWasDrawn = false; // <-- ADD THIS LINE HERE!
 
 	function applyResize(width: number, height: number): void {
 		const rdpr = Math.min(window.devicePixelRatio, 2);
@@ -658,9 +752,9 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 		textPlane.scale.set((resizedPlaneHeight * camera.aspect) / 10, resizedPlaneHeight / 10, 1);
 
 		activeTexture.dispose();
-		activeTexture = new THREE.CanvasTexture(bufferCanvas);
-		activeTexture.minFilter = THREE.LinearFilter;
-		activeTexture.magFilter = THREE.LinearFilter;
+		activeTexture = new CanvasTexture(bufferCanvas);
+		activeTexture.minFilter = LinearFilter;
+		activeTexture.magFilter = LinearFilter;
 
 		textMaterial.map = activeTexture;
 		textMaterial.needsUpdate = true;
@@ -688,32 +782,34 @@ const renderer = new THREE.WebGLRenderer({ canvas: outputCanvas, alpha: false, a
 	const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
 	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 	const mouse: MouseState = { nx: 0.5, ny: 0.5, cx: 0, cy: 0, speed: 0, prevCx: 0, prevCy: 0, vx: 0, vy: 0 };
+	
 	// Reticle hover detection — raycast against the center "hero" staircase
 	// instance (instances[0], ix === 0) each frame and report to the shared
 	// hover registry. The puddle reflections flanking it don't count.
-	const dreamRaycaster = new THREE.Raycaster();
-	const dreamPointerNdc = new THREE.Vector2();
+	const dreamRaycaster = new Raycaster();
+	const dreamPointerNdc = new Vector2();
 
-let sectionRect = sectionEl.getBoundingClientRect();
 	const sectionMetrics = { top: sectionEl.offsetTop, height: sectionEl.offsetHeight };
 
 	function onMouseMove(e: MouseEvent): void {
-		// clientX/Y and bounding client rect are both viewport-relative, 
-		// so this math is perfectly self-contained. No scroll offsets needed!
-		mouse.nx = (e.clientX - sectionRect.left) / Math.max(sectionRect.width, 1);
-		mouse.ny = (e.clientY - sectionRect.top) / Math.max(sectionRect.height, 1);
+		// Recalculate on every move so scroll position doesn't break the math
+		const rect = sectionEl.getBoundingClientRect();
+		
+		mouse.nx = (e.clientX - rect.left) / Math.max(rect.width, 1);
+		mouse.ny = (e.clientY - rect.top) / Math.max(rect.height, 1);
 	}
 
 	function onResize(): void {
-		sectionRect = sectionEl.getBoundingClientRect();
+		// Only cache offsetTop/offsetHeight for the scroll progress math
 		sectionMetrics.top = sectionEl.offsetTop;
 		sectionMetrics.height = sectionEl.offsetHeight;
 	}
 
+
 	if (hasFinePointer) sectionEl.addEventListener('mousemove', onMouseMove);
 	window.addEventListener('resize', onResize);
 
-const render = (time: number): void => {
+	const render = (time: number): void => {
 		if (!isVisible) return;
 
 		const width = lastWidth;
@@ -776,7 +872,7 @@ const render = (time: number): void => {
 
 			if (inst.ix === 0) {
 				// Easing curve: Starts at 5% scroll, ends at 35%
-				const beamProgress = smoothstep(0.15, 0.5, scrollProgress);
+				const beamProgress = smoothstep(0.15, 0.45, scrollProgress);
 				
 				// Pull it from the deep horizon
 				currentZ += lerp(-150, 0, beamProgress);
@@ -785,7 +881,7 @@ const render = (time: number): void => {
 				stretchX = lerp(60, 1, beamProgress);
 
 				// Feed HDR flare values into the shader
-				const mat = inst.mesh.material as THREE.ShaderMaterial;
+				const mat = inst.mesh.material as ShaderMaterial;
 				mat.uniforms.uFlare.value = lerp(10.0, 0.0, beamProgress); 
 			}
 
@@ -795,6 +891,7 @@ const render = (time: number): void => {
 			const rotY = (STAIR_ROTATION.y * inst.mirrorX) + inst.wireTiltY;
 			const rotZ = STAIR_ROTATION.z * inst.mirrorX + (inst.ix === 0 ? Math.PI / 4 : 0);
 			inst.mesh.rotation.set(rotX, rotY, rotZ);
+			
 			// Force the center instance to be flipped on X explicitly
 			const xScale = inst.ix === 0 
 				? -Math.abs(inst.wireScale) * stretchX 
@@ -807,16 +904,59 @@ const render = (time: number): void => {
 			inst.mesh.updateMatrix();
 		});
 
+		// Spotlight Raycaster
 		if (hasFinePointer) {
 			const heroMesh = instances[0]?.mesh;
 			if (heroMesh) {
 				masterGroup.updateMatrixWorld(true);
 				dreamPointerNdc.set(mouse.nx * 2 - 1, -(mouse.ny * 2 - 1));
 				dreamRaycaster.setFromCamera(dreamPointerNdc, camera);
-				setHoverTarget('staircase', dreamRaycaster.intersectObject(heroMesh, false).length > 0);
+				
+				const intersects = dreamRaycaster.intersectObject(heroMesh, false);
+				const isHovering = intersects.length > 0;
+				
+				setHoverTarget('staircase', isHovering);
+
+				if (isHovering) {
+					spotlightConfig.targetPos.copy(intersects[0].point);
+					spotlightConfig.targetIntensity = 1.0;
+				} else {
+					spotlightConfig.targetIntensity = 0.0;
+				}
 			}
 		}
+	// Lerp the spotlight variables for smooth trailing
+		spotlightConfig.intensity = lerp(spotlightConfig.intensity, spotlightConfig.targetIntensity, 0.1);
+		if (spotlightConfig.intensity > 0.001) {
+			spotlightConfig.pos.lerp(spotlightConfig.targetPos, 0.12);
+		}
 
+		// =========================================================
+		// ⚡️ NEW: SCROLL-DRIVEN OVERDRIVE & FLICKER
+		// =========================================================
+		
+		// 1. Flicker Multiplier: When scrolling fast, the existing beam stutters and flares
+		// like a loose connection drawing too much power.
+		const isScrollingFast = absVel > 2.0;
+		const flickerMultiplier = isScrollingFast 
+			? 1.0 + (Math.random() * clamp(absVel * 0.08, 0.0, 3.0)) 
+			: 1.0;
+			
+		// 2. Ambient Spark: Even if the user ISN'T hovering, scrolling really fast 
+		// causes the beam to aggressively flash out of the darkness anyway.
+		const ambientSpark = absVel > 5.0 && Math.random() > 0.6 
+			? clamp((absVel - 5.0) * 0.15, 0.0, 2.0) 
+			: 0.0;
+
+		const finalIntensity = (spotlightConfig.intensity * flickerMultiplier) + ambientSpark;
+
+		// Sync the final overdrive values to the shader
+		wireUniforms.uScannerPos.value.copy(spotlightConfig.pos);
+		wireUniforms.uScannerIntensity.value = finalIntensity;
+
+		// =========================================================
+		// 🌀 NEW: LENS WARP ON SCROLL
+		// =========================================================
 		let lensScaleEnvelope = 0.0;
 		if (scrollProgress < 0.25) {
 			lensScaleEnvelope = smoothstep(0, 1, scrollProgress / 0.25);
@@ -825,6 +965,10 @@ const render = (time: number): void => {
 		} else {
 			lensScaleEnvelope = 1.0;
 		}
+
+		// Base strength is 0.48. We add up to 1.2 extra distortion based on velocity,
+		// making the fisheye physically bulge outward under heavy scroll momentum.
+		lensPass.uniforms.uLensStrength.value = 0.48 + clamp(absVel * 0.025, 0.0, 1.2);
 
 		lensPass.uniforms.uLensRadius.value = lensScaleEnvelope * 2.0;
 		lensPass.uniforms.uVelocity.value = prefersReducedMotion ? 0 : scrollVelocity;

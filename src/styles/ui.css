@@ -7,6 +7,15 @@
     cursor: none !important;
 }
 
+@font-face {
+  font-family: 'Unbounded';
+  /* The leading slash '/' is CRITICAL. It tells Astro to look in the public folder */
+  src: url('/fonts/Unbounded-Medium.woff2') format('woff2'); 
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Core Base Wrapper */
 .lens-cursor {
     position: fixed;
