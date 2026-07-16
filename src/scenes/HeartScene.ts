@@ -153,34 +153,6 @@ function mergeModelGeometry(model: Object3D): BufferGeometry[] {
 	});
 }
 
-function buildSliceGeometry(geometries: BufferGeometry[], sliceIndex: number): BufferGeometry {
-	const box = new Box3();
-	geometries.forEach((g) => {
-		g.computeBoundingBox();
-		box.union(g.boundingBox!);
-	});
-
-	const height = box.max.y - box.min.y;
-	const overlap = height * 0.035;
-	const low = box.min.y + (height / SLICE_COUNT) * sliceIndex - overlap;
-	const high = box.min.y + (height / SLICE_COUNT) * (sliceIndex + 1) + overlap;
-	const positions: number[] = [];
-
-	geometries.forEach((geometry) => {
-		const source = geometry.attributes.position.array as Float32Array;
-		for (let i = 0; i < source.length; i += 9) {
-			const y = (source[i + 1] + source[i + 4] + source[i + 7]) / 3;
-			if (y < low || y > high) continue;
-			for (let v = 0; v < 9; v++) positions.push(source[i + v]);
-		}
-	});
-
-	const sliceGeometry = new BufferGeometry();
-	sliceGeometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
-	sliceGeometry.computeVertexNormals();
-	sliceGeometry.computeBoundingBox();
-	return sliceGeometry;
-}
 
 function runWorkerSlicing(
 	geometries: BufferGeometry[],
