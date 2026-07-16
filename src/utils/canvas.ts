@@ -5,6 +5,7 @@ export interface LoopController {
 	start: () => void;
 	stop: () => void;
 	destroy: () => void;
+	resize?: () => void; // Add this line
 }
 
 export function createLoopController(
