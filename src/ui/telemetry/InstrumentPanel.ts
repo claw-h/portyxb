@@ -92,7 +92,7 @@ function buildMeterSVG(channel: Extract<ChannelConfig, { type: 'meter' }>) {
 interface InternalRef {
     channel: ChannelConfig;
     type: ChannelType;
-    needle?: SVGLineElement;
+    needle?: SVGPolygonElement;
     pointer?: HTMLElement;
     valueEl?: HTMLElement;
     toggleEl?: HTMLElement;
@@ -114,29 +114,38 @@ export class InstrumentPanel {
         this.root = this._build(config);
     }
 
-    // 🟢 2. ADD THIS NEW METHOD TO TRACK THE MOUSE
-    private _onMouseMove = (e: MouseEvent) => {
-        if (!this.root) return;
-        
-        // We target the inner '.panel' because it has the exact boundaries we care about
-        const panelBox = this.root.querySelector('.panel') as HTMLElement;
-        if (!panelBox) return;
+    // Cached reference to the '.panel' element, set once in _build() instead of
+    // re-querying the DOM on every mousemove event.
+    private panelEl!: HTMLElement;
 
-        const rect = panelBox.getBoundingClientRect();
-        
-        // Calculate mouse position relative to the top-left of the panel
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        
-        // Update the CSS variables on the panel directly
-        panelBox.style.setProperty('--light-x', `${x}px`);
-        panelBox.style.setProperty('--light-y', `${y}px`);
-    };
+    // Driven by PanelManager's single centralized, rAF-throttled listener —
+    // this panel no longer owns a window listener itself.
+    public updateLightPosition(clientX: number, clientY: number) {
+        if (!this.panelEl) return;
+
+        const rect = this.panelEl.getBoundingClientRect();
+
+        // Skip the write entirely if the cursor is nowhere near this panel
+        // (cheap early-out before touching style so far-off panels do no work).
+        const margin = 200;
+        if (
+            clientX < rect.left - margin ||
+            clientX > rect.right + margin ||
+            clientY < rect.top - margin ||
+            clientY > rect.bottom + margin
+        ) {
+            return;
+        }
+
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        this.panelEl.style.setProperty('--light-x', `${x}px`);
+        this.panelEl.style.setProperty('--light-y', `${y}px`);
+    }
 
     public mount(parent: HTMLElement) {
         parent.appendChild(this.root);
-        // 🟢 3A. START TRACKING WHEN MOUNTED
-        window.addEventListener('mousemove', this._onMouseMove);
     }
 
     private _build(config: PanelConfig): HTMLElement {
@@ -179,6 +188,7 @@ export class InstrumentPanel {
     `;
         faceplate.appendChild(footer);
 
+        this.panelEl = panel;
         assembly.appendChild(panel);
         return assembly;
     }
@@ -211,7 +221,7 @@ export class InstrumentPanel {
       <div class="meter__housing">${buildMeterSVG(channel)}</div>
       <div class="meter__label">${channel.label}</div>
     `;
-        const needle = wrap.querySelector('[data-needle]') as SVGLineElement;
+        const needle = wrap.querySelector('[data-needle]') as SVGPolygonElement;
         this.refs.push({ channel, type: 'meter', needle, cx: 100, cy: 118 });
         return wrap;
     }
@@ -293,7 +303,7 @@ export class InstrumentPanel {
 // Inside InstrumentPanel.ts
     public setPosition(x: number, y: number, z: number, rotationY: number) {
         // Assuming your root element is this.el
-this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotationY}deg) scale(var(--panel-scale, 0.90))`;    }
+this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotationY}deg) scale(var(--panel-scale, 0.80))`;    }
 
     public setOpacity(opacity: number) {
         this.root.style.opacity = String(opacity);
@@ -346,7 +356,6 @@ this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotat
     }
 
     public destroy() {
-        window.removeEventListener('mousemove', this._onMouseMove);
         this.root.remove();
         this.refs = [];
         this.current.clear();

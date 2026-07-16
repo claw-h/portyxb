@@ -1226,9 +1226,16 @@ export function setupHeartScene(): LoopController | null {
 			window.removeEventListener('resize', handleResize);
             window.removeEventListener('mousemove', handleMouseMove); 
 			setHoverTarget('heart', false);
-			renderer.dispose();
+
+			// Telemetry panels: unmounts both InstrumentPanel instances and
+			// removes PanelManager's own centralized mousemove listener.
+			panelManager.destroy();
+
+			// Geometry/material disposal — was only catching Mesh, which
+			// silently skipped the LineSegments (edges) and Points instances
+			// since neither extends Mesh.
 			scene.traverse((obj) => {
-				if (obj instanceof Mesh) {
+				if (obj instanceof Mesh || obj instanceof LineSegments || obj instanceof Points) {
 					obj.geometry.dispose();
 					if (Array.isArray(obj.material)) {
 						obj.material.forEach((m) => m.dispose());
@@ -1237,6 +1244,26 @@ export function setupHeartScene(): LoopController | null {
 					}
 				}
 			});
+
+			// Postprocessing: EffectComposer.dispose() releases its own
+			// read/write render targets, but the individual passes can hold
+			// their own GPU resources (e.g. UnrealBloomPass's internal mip
+			// render targets) that need disposing separately.
+			bloomPass.dispose?.();
+			inkPass.dispose?.();
+			composer.dispose();
+
+			// Audio graph: stop both ambient oscillators and close the
+			// context so it doesn't linger as an active audio node graph.
+			fireOsc?.stop();
+			inkOsc?.stop();
+			fireOsc?.disconnect();
+			fireGain?.disconnect();
+			inkOsc?.disconnect();
+			inkGain?.disconnect();
+			audioCtx?.close();
+
+			renderer.dispose();
 		},
 	};
 }

@@ -16,12 +16,31 @@ export class PanelManager {
     private root: HTMLElement;
     private panels: Map<string, InstrumentPanel> = new Map();
 
+    // Light-spill tracking: one window listener for every panel this manager
+    // owns, coalesced to a single update per animation frame regardless of
+    // how fast mousemove events actually fire.
+    private lastMouseX = 0;
+    private lastMouseY = 0;
+    private lightRafPending = false;
+
+    private _onMouseMove = (e: MouseEvent) => {
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        if (this.lightRafPending) return;
+        this.lightRafPending = true;
+        requestAnimationFrame(() => {
+            this.lightRafPending = false;
+            this.panels.forEach((panel) => panel.updateLightPosition(this.lastMouseX, this.lastMouseY));
+        });
+    };
+
     /**
      * @param rootElement The DOM container where all telemetry panels will be mounted.
      * This should ideally be a dedicated UI layer separate from the WebGL canvas.
      */
     constructor(rootElement: HTMLElement) {
         this.root = rootElement;
+        window.addEventListener('mousemove', this._onMouseMove);
     }
 
     /**
@@ -79,6 +98,7 @@ export class PanelManager {
      * Cleans up all panels managed by this instance.
      */
     public destroy() {
+        window.removeEventListener('mousemove', this._onMouseMove);
         this.panels.forEach(panel => panel.destroy());
         this.panels.clear();
     }
