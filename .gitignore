@@ -25,3 +25,9 @@ pnpm-debug.log*
 
 .vscode
 .sticky-notes
+
+.architect
+*.mjs
+
+package.json
+package-lock.json
