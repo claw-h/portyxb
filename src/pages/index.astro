@@ -169,6 +169,25 @@ import '../styles/ui.css';
 	let active3DScene: LoopController | null = null;
 	let isInitializing = false; // Add this guard flag
 
+	// BiomeSphere loads async (see init3DSystem below), so its scroll setter
+	// isn't available until that import resolves. Lenis scroll events that
+	// fire before then are harmless no-ops — we just guard the call.
+	let setBiomeProgress: ((progress: number) => void) | null = null;
+	const biomeZoneEl = document.querySelector<HTMLElement>('.biome-zone');
+
+	// Section-local scroll progress: 0 at the moment .biome-zone's sticky
+	// area locks in place, 1 at the moment it releases. This is deliberately
+	// NOT the same as DreamCanvas's whole-page progress — .biome-zone is
+	// 400vh with a 100vh sticky child, so only the middle 300vh of page
+	// scroll should map to 0→1 here.
+	function getBiomeSectionProgress(scrollY: number): number {
+		if (!biomeZoneEl) return 0;
+		const sectionTop = biomeZoneEl.offsetTop;
+		const scrollableDistance = biomeZoneEl.offsetHeight - window.innerHeight;
+		if (scrollableDistance <= 0) return 0;
+		return Math.min(Math.max((scrollY - sectionTop) / scrollableDistance, 0), 1);
+	}
+
 	document.addEventListener('DOMContentLoaded', () => {
 		const sceneContainers = document.querySelectorAll('.scene-container, #hero');
 		
@@ -196,7 +215,7 @@ import '../styles/ui.css';
 			// Parallel load the heavy 3D scenes
 			const [
 				{ setupHeartScene },
-				{ setupBiomeSphere }
+				{ setupBiomeSphere, setBiomeScrollProgress }
 			] = await Promise.all([
 				import('../scenes/HeartScene'),
 				import('../scenes/BiomeSphere')
@@ -204,6 +223,12 @@ import '../styles/ui.css';
 			
 			active3DScene = setupHeartScene();
 			const biomeScene = setupBiomeSphere();
+			setBiomeProgress = setBiomeScrollProgress;
+
+			// Feed it an immediate value in case the user already scrolled
+			// into the biome section while the chunk was loading — otherwise
+			// it sits at progress 0 until the next scroll event fires.
+			setBiomeProgress(getBiomeSectionProgress(window.scrollY));
 
 			// Ensure we patch the destroy function to clean up the new scene
 			const originalDestroy = destroy;
@@ -224,14 +249,17 @@ import '../styles/ui.css';
         smoothWheel: true,
     });
 
+
+
 	// Held until the site is actually ready — see onReady() below.
 	lenis.stop();
 
 	// 3. Feed real-time Lenis scroll velocity into DreamCanvas
-	lenis.on('scroll', (e: { velocity: number; progress: number;}) => {
+	lenis.on('scroll', (e: { velocity: number; progress: number; scroll: number; }) => {
 		setDreamScrollVelocity(e.velocity);
 		setDreamScrollProgress(e.progress); 
-		
+
+		setBiomeProgress?.(getBiomeSectionProgress(e.scroll));
 	});
 
     // 4. Mount Lenis to the browser's requestAnimationFrame
@@ -240,6 +268,18 @@ import '../styles/ui.css';
         requestAnimationFrame(raf);
     }
     requestAnimationFrame(raf);
+
+	// ─── THE NEW SCROLL LOCK LOGIC ──────────────────────────────
+
+	// 1. Lock the scroll when the flash sequence begins
+	window.addEventListener('biome-flash-start', () => {
+		lenis.stop(); // Physically prevents the user from scrolling further
+	});
+
+	// 2. Unlock the scroll when the 10 rotations finish
+	window.addEventListener('biome-flash-complete', () => {
+		lenis.start(); // Restores scroll functionality
+	});
 
 	// Everything above has been rendering, off-screen, behind the opaque
 	// preloader this whole time. Only once fonts + the heart scene + the
@@ -734,10 +774,20 @@ import '../styles/ui.css';
 		/* ─── Zone 03: Biome Sphere ──────────────────────── */
 	.biome-zone {
 		position: relative;
-		height: 400vh; /* 4 biomes = 4 viewport heights of scrolling */
+		/* 400vh for biome-to-biome travel (unchanged pacing) + 100vh
+		   reserved purely for the exit collapse below. */
+		height: 500vh;
 		background: #000000;
 		padding: 0;
 		display: block;
+		/* .canvas-zone sets overflow: hidden, which — even though this
+		   section never visually overflows — breaks position: sticky on
+		   .biome-sticky below. ANY ancestor of a sticky element with
+		   overflow != visible removes it from the real document scroller's
+		   frame of reference. .hero-sequence doesn't share .canvas-zone,
+		   which is why hero-sticky was never affected. .biome-sticky
+		   already clips its own contents, so nothing leaks by freeing this. */
+		overflow: visible;
 	}
 
 	.biome-sticky {
