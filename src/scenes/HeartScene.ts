@@ -18,6 +18,10 @@ import {
 	DoubleSide,
 	ShaderMaterial,
 	Box3,
+	AlwaysStencilFunc,
+	EqualStencilFunc,
+	KeepStencilOp,
+	ReplaceStencilOp,
 	Scene, 
 	PerspectiveCamera, 
 	BufferGeometry,
@@ -30,7 +34,6 @@ import {
 	Vector3,
 	Raycaster
 } from 'three';
-
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -45,9 +48,7 @@ import type { LoopController } from '../utils/canvas';
 import { markReady } from '../utils/loadState.ts';
 import { setHoverTarget } from '../utils/hoverTargets';
 
-// ------------------
-// ---------------------------------------------------------
-
+// ---------------------------------------------------------------------------
 // Types & Constants
 // ---------------------------------------------------------------------------
 
@@ -83,6 +84,11 @@ const SLICE_COUNT = 5;
 const SLICE_GAP = 0.36;
 const SCROLL_DAMPING = 0.08; 
 
+// Reused every frame in the dissection reveal — never allocate Color objects inside the render loop.
+const EMISSIVE_COOL = new Color(0x0a1f3d);
+const EMISSIVE_HOT = new Color(0.1, 0.6, 1.0);
+const EMISSIVE_PEAK_INTENSITY = 2.4; // ACES tonemapping starts eating the G/B channels well before 6.5 — tune from here
+
 const TIMELINE = {
 	heartFade: { start: 0.035, end: 0.11 },
 	rotateH: { start: 0.1, end: 0.34 },
@@ -109,11 +115,6 @@ function mergeModelGeometry(model: Object3D): BufferGeometry[] {
 		if (!(child instanceof Mesh) || !child.geometry) return;
 		const geometry = child.geometry.clone() as BufferGeometry;
 
-		// =========================================================
-		// DE-QUANTIZE COMPRESSED GEOMETRY
-		// Converts meshopt/draco integers back to floats so matrix 
-        // math doesn't corrupt the vertices.
-		// =========================================================
 		['position', 'normal'].forEach((key) => {
 			const attr = geometry.attributes[key];
 			if (attr && !(attr.array instanceof Float32Array)) {
@@ -153,11 +154,10 @@ function mergeModelGeometry(model: Object3D): BufferGeometry[] {
 	});
 }
 
-
 function runWorkerSlicing(
 	geometries: BufferGeometry[],
 	group: Group,
-	onDone: (result: SliceHolder[]) => void
+	onDone: (result: { slices: SliceHolder[]; solids: Mesh[] }) => void
 ) {
 	const box = new Box3();
 	geometries.forEach((g) => {
@@ -169,21 +169,17 @@ function runWorkerSlicing(
 	const maxY = box.max.y;
 	const vertexBuffers = geometries.map(g => g.attributes.position.array as Float32Array);
 
-	// Vite understands this exact syntax to compile and package your worker file
 	const worker = new Worker(new URL('./heartWorker.ts', import.meta.url), { type: 'module' });
 	
 	worker.onmessage = async (e) => {
 		const { slicedBuffers } = e.data;
-		
-		// Instantly free up the massive un-sliced parent geometry memory
 		geometries.forEach(g => g.dispose()); 
 		
-		const resultSlices = await buildSlicesFromBuffers(slicedBuffers, group);
-		onDone(resultSlices);
+		const result = await buildSlicesFromBuffers(slicedBuffers, group);
+		onDone(result);
 		worker.terminate();
 	};
 
-	// Transfer ownership of the raw underlying buffers so there is 0% copying overhead
 	worker.postMessage({
 		vertexBuffers,
 		minY,
@@ -200,7 +196,7 @@ const spotlightConfig = {
 	targetPos: new Vector3(0, 0, 0),
 	intensity: 0,
 	targetIntensity: 0,
-	radius: 1.35, // Premium wider spread for a softer volumetric falloff
+	radius: 1.1, // Concentrated beam area
 };
 
 const spotlightUniforms = {
@@ -236,65 +232,59 @@ const injectSpotlightReveal = (shader: any) => {
 		float shaderReveal = 1.0 - smoothstep(uScannerRadius * 0.1, uScannerRadius, shaderDist);
 		shaderReveal *= uScannerIntensity;
 
-		// Base subtle ambient visibility of the heart when outside the spotlight beam
 		float baseVisibility = 0.025;
 		
-		// Perfect uniform alpha reveal interaction mapping
 		gl_FragColor.a = mix(gl_FragColor.a * baseVisibility, gl_FragColor.a * 1.0, shaderReveal);
 		
-		// Injected Volumetric Light Glow Effect 
-		vec3 volumetricColor = vec3(0.48, 0.82, 1.0); // Technological cyan-blue glow
+		vec3 volumetricColor = vec3(0.48, 0.82, 1.0);
 		float volumetricFalloff = pow(1.0 - clamp(shaderDist / uScannerRadius, 0.0, 1.0), 2.5);
 		gl_FragColor.rgb += volumetricColor * volumetricFalloff * uScannerIntensity * 0.48;
 		`
 	);
 };
 
-// Replace your old buildSlices function with this:
 async function buildSlicesFromBuffers(
 	slicedBuffers: Float32Array[],
 	group: Group,
-): Promise<SliceHolder[]> {
+): Promise<{ slices: SliceHolder[]; solids: Mesh[] }> {
 	const slices: SliceHolder[] = [];
+	const solids: Mesh[] = [];
 
-	// 1. Create the THREE master materials ONCE outside the loop
+	// Optimized Hybrid Bio-Holographic Solid Material (Performance focused)
 	const solidMaterial = new MeshPhysicalMaterial({
-		color: 0x07162c,
-		emissive: 0x1c2e4d,
-		emissiveIntensity: 0.08,
+		color: 0x081c33,
+		emissive: 0x0a1f3d,
+		emissiveIntensity: 0.2,
 		transparent: true,
-		opacity: 0.22, 
-		roughness: 0.18,
-		metalness: 0.06,
-		transmission: 0.72,
-		thickness: 1.8,
-		clearcoat: 0.82,
-		clearcoatRoughness: 0.12,
-		reflectivity: 0.38,
-		ior: 1.34,
+		opacity: 0.75,         // Much higher opacity for solid physical presence
+		roughness: 0.12,       // Very low roughness for a slick, wet specular highlight
+		metalness: 0.65,       // High metalness fakes dense, glossy organic tissue
 		side: DoubleSide,
 		depthWrite: false,
+		stencilWrite: true,
+		stencilRef: 1,
+		stencilFunc: AlwaysStencilFunc,
+		stencilZPass: ReplaceStencilOp,
 	});
 
 	const wireMaterial = new MeshBasicMaterial({
-		color: 0xc6e4ff,
+		color: 0xd2edff,
 		transparent: true,
-		opacity: 0.18, 
+		opacity: 0.22, 
 		wireframe: true,
 		depthWrite: false,
 	});
 
 	const edgeMaterial = new LineBasicMaterial({
-		color: 0x76cdff,
+		color: 0x82d6ff,
 		transparent: true,
-		opacity: 0.12, 
+		opacity: 0.18, 
 	});
 
 	solidMaterial.onBeforeCompile = injectSpotlightReveal;
 	wireMaterial.onBeforeCompile = injectSpotlightReveal;
 	edgeMaterial.onBeforeCompile = injectSpotlightReveal;
 
-	// 2. Map through the buffers using the shared materials
 	for (let i = 0; i < slicedBuffers.length; i++) {
 		const buffer = slicedBuffers[i];
 		if (!buffer || buffer.length === 0) continue;
@@ -310,7 +300,6 @@ async function buildSlicesFromBuffers(
 		holder.userData.phase = i * 0.34;
 		holder.userData.index = i;
 
-		// Reuse the single master material references
 		const solid = new Mesh(sliceGeometry, solidMaterial);
 		const wire = new Mesh(sliceGeometry.clone(), wireMaterial);
 		const edges = new LineSegments(new EdgesGeometry(sliceGeometry, 22), edgeMaterial);
@@ -322,16 +311,18 @@ async function buildSlicesFromBuffers(
 		holder.userData.materials = { solid: solidMaterial, wire: wireMaterial, edges: edgeMaterial };
 		group.add(holder);
 		slices.push(holder);
+		solids.push(solid);
 	}
 
-	return slices;
+	return { slices, solids };
 }
 
 function evaluateScrollState(progress: number): ScrollState {
     const p = Math.min(progress, 1.0); 
     return {
         progress,                       
-		heartFade: Math.max(0.001, smoothstep(TIMELINE.heartFade.start, TIMELINE.heartFade.end, p)),        rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, p),
+		heartFade: Math.max(0.001, smoothstep(TIMELINE.heartFade.start, TIMELINE.heartFade.end, p)),
+        rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, p),
         rotateVertical: smoothstep(TIMELINE.rotateV.start, TIMELINE.rotateV.end, p),
         dissectionProgress: smoothstep(TIMELINE.dissection.start, TIMELINE.dissection.end, p),
         fireProgress: smoothstep(TIMELINE.fireIn.start, TIMELINE.fireIn.end, p) * (1 - smoothstep(TIMELINE.fireOut.start, TIMELINE.fireOut.end, p)),
@@ -341,29 +332,58 @@ function evaluateScrollState(progress: number): ScrollState {
     };
 }
 
-function createWebGLFireSystem(fireCount = 200) {
-	const geometry = new BufferGeometry();
-	const positions = new Float32Array(fireCount * 3);
-	const velocities = new Float32Array(fireCount * 3);
-	const lifetimes = new Float32Array(fireCount); 
-	const sizes = new Float32Array(fireCount);
+function turbulence(i: number, y: number, t: number): number {
+	return (
+		Math.sin(y * 1.3 + t * 0.9 + i * 12.9898) * 0.5 +
+		Math.sin(y * 3.7 - t * 1.7 + i * 78.233) * 0.25 +
+		Math.sin(y * 7.1 + t * 2.3 + i * 37.719) * 0.125
+	);
+}
 
-	for (let i = 0; i < fireCount; i++) {
-		resetParticle(i);
-		lifetimes[i] = Math.random();
+const FLAME_BASE_Y = -3.3;       
+const FLAME_HALF_HEIGHT = 2.6;   
+const FLAME_HALF_WIDTH = 1.3;    
+
+function flameScaleY(intensity: number): number {
+	return 0.55 + intensity * 0.55;
+}
+
+function flameScaleX(intensity: number): number {
+	return 0.75 + intensity * 0.35;
+}
+
+function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms) {
+	const geometry = new BufferGeometry();
+	const positions = new Float32Array(emberCount * 3);
+	const velocities = new Float32Array(emberCount * 3);
+	const lifetimes = new Float32Array(emberCount);
+	const sizes = new Float32Array(emberCount);
+
+	const LIFE_DECAY = 0.055;
+	const lifeDecayJitter = new Float32Array(emberCount); 
+	const GRAVITY = 0.00022;      
+	const DRAG = 0.94;            
+	const TURBULENCE_STRENGTH = 0.003;
+
+	function resetParticle(i: number, baseY: number, topY: number, spreadX: number) {
+		const heightT = Math.pow(Math.random(), 1.5); 
+		const widthHere = spreadX * (1.0 - heightT * 0.5);
+		positions[i * 3] = (Math.random() - 0.5) * widthHere;
+		positions[i * 3 + 1] = baseY + (heightT * (topY - baseY) * 0.8);
+		positions[i * 3 + 2] = 1 + (Math.random() - 0.5) * 0.5;
+
+		velocities[i * 3] = (Math.random() - 0.5) * 0.015;
+		velocities[i * 3 + 1] = 0.03 + (Math.random() * 0.04);
+		velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.01;
+
+		sizes[i] = Math.random() * 0.15 + 0.05; 
+		lifeDecayJitter[i] = 0.8 + Math.random() * 0.4;
+		lifetimes[i] = 1.0;
 	}
 
-	function resetParticle(i: number) {
-		positions[i * 3] = (Math.random() - 0.5) * 4;       
-		positions[i * 3 + 1] = -3 + Math.random() * 0.5;    
-		positions[i * 3 + 2] = 1 + (Math.random() - 0.5);   
-		
-		velocities[i * 3] = (Math.random() - 0.5) * 0.02;   
-		velocities[i * 3 + 1] = 0.04 + Math.random() * 0.04;
-		velocities[i * 3 + 2] = 0;                          
-
-		lifetimes[i] = 1.0;
-		sizes[i] = Math.random() * 2.0 + 1.0;
+	for (let i = 0; i < emberCount; i++) {
+		resetParticle(i, FLAME_BASE_Y, FLAME_BASE_Y + FLAME_HALF_HEIGHT * 2, FLAME_HALF_WIDTH);
+		lifetimes[i] = Math.random();
 	}
 
 	geometry.setAttribute('position', new BufferAttribute(positions, 3));
@@ -374,48 +394,51 @@ function createWebGLFireSystem(fireCount = 200) {
 	const material = new ShaderMaterial({
 		uniforms: {
 			uTime: { value: 0 },
-			uIntensity: { value: 0.0 }
+			uIntensity: { value: 0.0 },
+			uScannerPos: spotlight.uScannerPos,
+			uScannerRadius: spotlight.uScannerRadius,
+			uScannerIntensity: spotlight.uScannerIntensity
 		},
 		vertexShader: `
 			attribute float aLife;
 			attribute float aSize;
 			varying float vLife;
-			uniform float uTime;
+			varying float vSpotMask;
 			uniform float uIntensity;
+			uniform vec3 uScannerPos;
+			uniform float uScannerRadius;
+			uniform float uScannerIntensity;
 
 			void main() {
 				vLife = aLife;
-				vec3 pos = position;
-				
-				pos.x += sin(uTime * 2.0 + pos.y * 2.0) * 0.2 * uIntensity;
-				
-				vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
-				
-				gl_PointSize = aSize * 40.0 * (vLife + 0.2) * uIntensity * (10.0 / -mvPosition.z);
+				vec4 worldPos = modelMatrix * vec4(position, 1.0);
+				float d = distance(worldPos.xyz, uScannerPos);
+				vSpotMask = (1.0 - smoothstep(uScannerRadius * 0.1, uScannerRadius, d)) * uScannerIntensity;
+
+				vec4 mvPosition = viewMatrix * worldPos;
+				float pointSize = aSize * 45.0 * (vLife + 0.2) * uIntensity * vSpotMask * (10.0 / -mvPosition.z);
+				gl_PointSize = min(pointSize, 60.0);
 				gl_Position = projectionMatrix * mvPosition;
 			}
 		`,
 		fragmentShader: `
 			varying float vLife;
+			varying float vSpotMask;
 			uniform float uIntensity;
 
 			void main() {
-				if (uIntensity < 0.01) discard;
+				if (uIntensity < 0.01 || vSpotMask < 0.01) discard;
 
 				vec2 xy = gl_PointCoord.xy - vec2(0.5);
-				float distance = length(xy);
-				if (distance > 0.5) discard;
+				float dist = length(xy);
+				if (dist > 0.5) discard;
 
-				float alpha = (0.5 - distance) * 2.0;
-				alpha *= vLife * uIntensity;
+				vec3 colorHot = vec3(2.2, 1.1, 0.4);
+				vec3 colorCool = vec3(0.9, 0.15, 0.0);
+				vec3 finalColor = mix(colorCool, colorHot, smoothstep(0.0, 1.0, vLife)) * (1.0 + vSpotMask * 2.5);
 
-				vec3 colorWhite = vec3(1.0, 0.9, 0.7);
-				vec3 colorOrange = vec3(1.0, 0.4, 0.0);
-				vec3 colorRed = vec3(0.5, 0.0, 0.0);
-
-				vec3 finalColor = mix(colorRed, colorOrange, smoothstep(0.0, 0.5, vLife));
- finalColor = mix(finalColor, colorWhite, smoothstep(0.5, 1.0, vLife));
-
+				float glow = smoothstep(0.5, 0.05, dist);
+				float alpha = glow * vLife * uIntensity * vSpotMask;
 				gl_FragColor = vec4(finalColor, alpha);
 			}
 		`,
@@ -426,28 +449,52 @@ function createWebGLFireSystem(fireCount = 200) {
 
 	const points = new Points(geometry, material);
 
-	const update = (time: number, intensity: number) => {
-		material.uniforms.uTime.value = time * 0.001;
-		material.uniforms.uIntensity.value = intensity;
+	let lastTime: number | null = null;
 
-		if (intensity <= 0.01) return;
+	const update = (time: number, intensity: number) => {
+		material.uniforms.uIntensity.value = intensity;
+		if (intensity <= 0.001 || spotlight.uScannerIntensity.value <= 0.001) return; 
+
+		const tSec = time * 0.001;
+		material.uniforms.uTime.value = tSec;
+
+		const dt = lastTime === null ? 1 : Math.min(Math.max((time - lastTime) / 16.6667, 0), 3);
+		lastTime = time;
 
 		const posAttr = geometry.attributes.position;
 		const lifeAttr = geometry.attributes.aLife;
 		const velAttr = geometry.attributes.aVelocity;
 
-		for (let i = 0; i < fireCount; i++) {
+		const windX = Math.sin(tSec * 0.15) * 0.006; 
+
+		const baseY = FLAME_BASE_Y;
+		const topY = FLAME_BASE_Y + 2 * FLAME_HALF_HEIGHT * flameScaleY(intensity);
+		const spreadX = 2 * FLAME_HALF_WIDTH * flameScaleX(intensity) * 0.7;
+
+		for (let i = 0; i < emberCount; i++) {
 			let life = lifeAttr.getX(i);
-			life -= 0.01;
+			life -= LIFE_DECAY * lifeDecayJitter[i] * dt;
 
 			if (life <= 0) {
-				resetParticle(i);
-			} else {
-				lifeAttr.setX(i, life);
-				
-				posAttr.setX(i, posAttr.getX(i) + velAttr.getX(i));
-				posAttr.setY(i, posAttr.getY(i) + velAttr.getY(i) * (1.0 + intensity * 0.5));
+				resetParticle(i, baseY, topY, spreadX);
+				continue;
 			}
+
+			lifeAttr.setX(i, life);
+
+			let vx = velAttr.getX(i);
+			let vy = velAttr.getY(i);
+
+			vy -= GRAVITY * dt;
+
+			const n = turbulence(i, posAttr.getY(i), tSec);
+			vx = vx * Math.pow(DRAG, dt) + n * TURBULENCE_STRENGTH * dt + windX * dt;
+
+			velAttr.setX(i, vx);
+			velAttr.setY(i, vy);
+
+			posAttr.setX(i, posAttr.getX(i) + vx * dt);
+			posAttr.setY(i, posAttr.getY(i) + vy * dt);
 		}
 
 		posAttr.needsUpdate = true;
@@ -455,6 +502,211 @@ function createWebGLFireSystem(fireCount = 200) {
 	};
 
 	return { mesh: points, update };
+}
+
+function createFlamePlane(spotlight: typeof spotlightUniforms) {
+    const uniforms = {
+        uTime: { value: 0 },
+        uIntensity: { value: 0.0 },
+        uUseCurl: { value: 1.0 },
+        uScannerPos: spotlight.uScannerPos,
+        uScannerRadius: spotlight.uScannerRadius,
+        uScannerIntensity: spotlight.uScannerIntensity
+    };
+
+	const material = new ShaderMaterial({
+		uniforms: uniforms,
+		transparent: true,
+		depthWrite: false,
+		blending: AdditiveBlending,
+		stencilWrite: true,
+		stencilRef: 1,
+		stencilFunc: EqualStencilFunc,
+		stencilFail: KeepStencilOp,
+		stencilZFail: KeepStencilOp,
+		stencilZPass: KeepStencilOp,
+		
+		vertexShader: `
+			varying vec2 vUv;
+			varying vec3 vWorldPos;
+			
+			void main() {
+				vUv = uv;
+				vec3 pos = position;
+				
+				float angle = (uv.x - 0.5) * 3.14159265; 
+				float radius = 1.8; 
+				
+				pos.x = sin(angle) * radius;
+				pos.z = (cos(angle) - 1.0) * radius; 
+				
+				vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+				
+				gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+			}
+		`,
+
+		fragmentShader: `
+			varying vec2 vUv;
+			varying vec3 vWorldPos;
+			uniform float uTime;
+			uniform float uIntensity;
+			uniform float uUseCurl;
+			uniform vec3 uScannerPos;
+			uniform float uScannerRadius;
+			uniform float uScannerIntensity;
+
+			float hash21(vec2 p) {
+				p = fract(p * vec2(123.34, 456.21));
+				p += dot(p, p + 45.32);
+				return fract(p.x * p.y);
+			}
+
+			float noise(vec2 p) {
+				vec2 i = floor(p);
+				vec2 f = fract(p);
+				float a = hash21(i);
+				float b = hash21(i + vec2(1.0, 0.0));
+				float c = hash21(i + vec2(0.0, 1.0));
+				float d = hash21(i + vec2(1.0, 1.0));
+				vec2 u = f * f * (3.0 - 2.0 * f);
+				return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+			}
+
+			float fbm(vec2 p) {
+				float sum = 0.0;
+				float amp = 0.5;
+				for (int i = 0; i < 4; i++) {
+					sum += amp * noise(p);
+					p *= 2.02; 
+					amp *= 0.5;
+				}
+				return sum;
+			}
+
+			vec2 domainWarp(vec2 p) {
+				return vec2(fbm(p + vec2(0.0, 0.0)), fbm(p + vec2(5.2, 1.3)));
+			}
+
+			vec2 curlNoise(vec2 p) {
+				float e = 0.06;
+				float dPsiDy = (fbm(p + vec2(0.0, e)) - fbm(p - vec2(0.0, e))) / (2.0 * e);
+				float dPsiDx = (fbm(p + vec2(e, 0.0)) - fbm(p - vec2(e, 0.0))) / (2.0 * e);
+				return vec2(dPsiDy, -dPsiDx);
+			}
+
+			void main() {
+				if (uIntensity < 0.01) discard;
+
+				float spotDist = distance(vWorldPos, uScannerPos);
+				float spotMask = (1.0 - smoothstep(uScannerRadius * 0.15, uScannerRadius, spotDist)) * uScannerIntensity;
+
+				if (spotMask < 0.001) discard;
+
+				float energy = mix(0.55, 1.35, uIntensity);
+
+				vec2 p = vUv * vec2(2.2, 4.2);
+				vec2 rise = vec2(0.0, uTime * 1.1 * energy); 
+				vec2 base = p - rise;
+
+				float warped;
+				if (uUseCurl > 0.5) {
+					vec2 flow = curlNoise(base) * 0.9 * energy;
+					warped = fbm(base + flow - rise * 0.4);
+				} else {
+					vec2 offset = domainWarp(base) * 0.9 * energy;
+					warped = fbm(base + offset - rise * 0.4);
+				}
+				
+				warped = smoothstep(0.15, 0.85, warped);
+
+				float wander = fbm(vec2(vUv.y * 1.3, uTime * 0.22 + 4.0)) - 0.5;
+				float centerX = 0.5 + wander * 0.3 * vUv.y; 
+
+				float widthNoise = fbm(vec2(vUv.y * 2.1 + 9.0, uTime * 0.2));
+				float widthJitter = 0.65 + 0.6 * widthNoise;
+
+				float heightNoise = fbm(vec2(vUv.x * 2.6 + 1.0, uTime * 0.3));
+				
+				float heightReach = mix(0.42, 1.05, heightNoise) * mix(0.7, 1.15, uIntensity);
+
+				float heightEnvelope = 1.0 - smoothstep(0.08, heightReach, vUv.y);
+				
+				float halfWidthAtHeight = mix(0.6, 0.25, pow(vUv.y, 1.2)) * widthJitter;
+
+				float edgeErosion = fbm(vec2(vUv.y * 6.0, uTime * 1.5)) * 0.15;
+				float xOffset = abs(vUv.x - centerX) + edgeErosion;
+
+				float widthEnvelope = 1.0 - smoothstep(halfWidthAtHeight * 0.2, halfWidthAtHeight * 1.3, xOffset);
+				float envelope = heightEnvelope * widthEnvelope;
+
+				float lateralMask = smoothstep(0.02, 0.15, vUv.x) * smoothstep(0.98, 0.85, vUv.x);
+				float depthFade = lateralMask; 
+
+				float edgeBias = pow(1.0 - envelope, 1.4) * 1.15; 
+				float field = warped - edgeBias;
+
+				float alpha = smoothstep(0.01, 0.25, field) * uIntensity * 0.8 * depthFade * spotMask;
+
+				float flicker = 0.85 + 0.15 * fbm(vec2(uTime * 0.7, 3.1));
+				float glow = clamp(warped * envelope * flicker, 0.0, 1.0);
+
+				vec3 col = mix(vec3(0.15, 0.01, 0.0), vec3(0.85, 0.2, 0.0), smoothstep(0.05, 0.35, glow));
+				col = mix(col, vec3(1.0, 0.5, 0.05), smoothstep(0.35, 0.65, glow));
+				col = mix(col, vec3(1.2, 0.9, 0.5), smoothstep(0.65, 0.95, glow));
+
+				col *= (1.0 + spotMask * 0.8);
+
+				gl_FragColor = vec4(col, alpha);
+			}
+		`
+	});
+
+	const mesh = new Mesh(new PlaneGeometry(2.5, 4.5, 32, 1), material);
+	mesh.position.set(0, FLAME_BASE_Y + FLAME_HALF_HEIGHT, 1);
+	mesh.renderOrder = 1;
+
+	const update = (time: number, scrollIntensity: number) => {
+		material.uniforms.uIntensity.value = scrollIntensity;
+		if (scrollIntensity <= 0.001 || spotlight.uScannerIntensity.value <= 0.001) return;
+
+		const tSec = time * 0.001;
+		material.uniforms.uTime.value = tSec;
+
+		const scaleY = flameScaleY(scrollIntensity);
+		const scaleX = flameScaleX(scrollIntensity);
+		mesh.scale.set(scaleX, scaleY, 1);
+		mesh.position.y = FLAME_BASE_Y + FLAME_HALF_HEIGHT * scaleY;
+		mesh.position.x = Math.sin(tSec * 0.35) * 0.12 * scrollIntensity;
+	};
+
+	return { mesh, update };
+}
+
+function createWebGLFireSystem(emberCount = 140, spotlight: typeof spotlightUniforms) {
+	const flame = createFlamePlane(spotlight);
+	const embers = createEmberSystem(emberCount, spotlight);
+
+	const group = new Group();
+	group.add(flame.mesh);
+	group.add(embers.mesh);
+
+	let smoothedIntensity = 0;
+	let lastTime: number | null = null;
+	const SMOOTH_RATE = 4.5; 
+
+	const update = (time: number, intensity: number) => {
+		const dtSeconds = lastTime === null ? 0 : Math.max(0, (time - lastTime) / 1000);
+		lastTime = time;
+
+		const alpha = 1 - Math.exp(-SMOOTH_RATE * dtSeconds);
+		smoothedIntensity += (intensity - smoothedIntensity) * alpha;
+
+		flame.update(time, smoothedIntensity);
+		embers.update(time, smoothedIntensity);
+	};
+
+	return { mesh: group, update };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,11 +726,9 @@ export function setupHeartScene(): LoopController | null {
 	const borderSvg = document.querySelector<SVGSVGElement>('.hero-border-svg');
 	const borderPaths = document.querySelectorAll<SVGPathElement>('.hero-border-path');
 	
-
 	const heroCopyEl = document.querySelector<HTMLElement>('[data-hero-copy]');
 	const lineOne = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--one');
 	const lineTwo = heroCopyEl?.querySelector<HTMLElement>('.hero-copy-line--two');
-
 
 	const uiLayer = document.getElementById('heart-ui-layer');
     if (!uiLayer) {
@@ -486,9 +736,6 @@ export function setupHeartScene(): LoopController | null {
     }
     const panelManager = new PanelManager(uiLayer as HTMLElement);
 
-    // 🟢 2. REGISTER TELEMETRY PANELS 🟢
-    // We'll map these to specific slices (index 4 is top/aorta, index 2 is middle/ventricle)
-    // 🟢 NEW PANEL CONFIGURATIONS FOR PROTOTYPE FUNCTIONALITY 🟢
     const panelConfigs: PanelConfig[] = [
         {
             id: 'telemetry-left',
@@ -529,31 +776,31 @@ export function setupHeartScene(): LoopController | null {
     let inkOsc: OscillatorNode | null = null;
     let inkGain: GainNode | null = null;
 
-	let crossedDissection = false;
-    let crossedTerminal = false;
+    let maxProgress = 0;
+    let decoupledFireIntensity = 0;
+    let fireActive = false;
+    let isHoveringPrevState = false;
 
 	function initSynthEngine() {
         if (audioCtx) return;
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         audioCtx = new AudioContextClass();
 
-        // Ambient Fire Track: A deep, muffled low-end rumble (Sawtooth + Lowpass)
         fireOsc = audioCtx.createOscillator();
         fireGain = audioCtx.createGain();
         const fireFilter = audioCtx.createBiquadFilter();
         
         fireOsc.type = 'sawtooth';
-        fireOsc.frequency.setValueAtTime(45, audioCtx.currentTime); // 45Hz sub-bass
+        fireOsc.frequency.setValueAtTime(45, audioCtx.currentTime); 
         fireFilter.type = 'lowpass';
-        fireFilter.frequency.setValueAtTime(90, audioCtx.currentTime); // Cut the harsh high frequencies
+        fireFilter.frequency.setValueAtTime(90, audioCtx.currentTime); 
 
         fireOsc.connect(fireFilter);
         fireFilter.connect(fireGain);
         fireGain.connect(audioCtx.destination);
-        fireGain.gain.setValueAtTime(0, audioCtx.currentTime); // Start silent
+        fireGain.gain.setValueAtTime(0, audioCtx.currentTime); 
         fireOsc.start();
 
-        // Ambient Ink Track: A pure, submerged fluid frequency (Sine Wave)
         inkOsc = audioCtx.createOscillator();
         inkGain = audioCtx.createGain();
         
@@ -562,31 +809,8 @@ export function setupHeartScene(): LoopController | null {
 
         inkOsc.connect(inkGain);
         inkGain.connect(audioCtx.destination);
-        inkGain.gain.setValueAtTime(0, audioCtx.currentTime); // Start silent
+        inkGain.gain.setValueAtTime(0, audioCtx.currentTime); 
         inkOsc.start();
-    }
-
-    // Local function to synthesize quick UI chimes/clicks on demand
-    function playUiChime(frequency: number, duration = 0.15) {
-        if (!audioCtx) initSynthEngine();
-        if (audioCtx!.state === 'suspended') audioCtx!.resume();
-
-        const now = audioCtx!.currentTime;
-        const osc = audioCtx!.createOscillator();
-        const gain = audioCtx!.createGain();
-
-        osc.type = 'triangle'; // Gives a clean, tech-focused chime
-        osc.frequency.setValueAtTime(frequency, now);
-
-        // Volume Envelope: Sharp attack, smooth exponential decay to prevent speaker clipping
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.12, now + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-
-        osc.connect(gain);
-        gain.connect(audioCtx!.destination);
-        osc.start(now);
-        osc.stop(now + duration);
     }
 
 	function updateBorderLength() {
@@ -597,13 +821,10 @@ export function setupHeartScene(): LoopController | null {
 			
 			borderSvg.setAttribute('viewBox', `0 0 ${w} ${cachedH}`);
 			
-			// 1:1 precise viewport mapping matching the 24px container grid bounds
 			pTop = (window.innerHeight * 0.18) - 24;
 			pBot = (window.innerHeight * 0.82) - 24;
 			
-			// Top path covers scrollbar center to top-right corner, across top, down to left center
 			borderPaths[0].setAttribute('d', `M ${w - 1} ${cachedH / 2} L ${w - 1} 1 L 1 1 L 1 ${cachedH / 2}`);
-			// Bottom path covers scrollbar center to bottom-right corner, across bottom, up to left center
 			borderPaths[1].setAttribute('d', `M ${w - 1} ${cachedH / 2} L ${w - 1} ${cachedH - 1} L 1 ${cachedH - 1} L 1 ${cachedH / 2}`);
 			
 			pathLength = w + cachedH - 4;
@@ -638,6 +859,9 @@ export function setupHeartScene(): LoopController | null {
         targetX: 0,
         targetY: 0
     };
+    
+    let isIntersecting = false;
+    let isVisible = false;
 
     const handleMouseMove = (e: MouseEvent) => {
         mouse.targetX = (e.clientX / window.innerWidth) * 2 - 1;
@@ -645,11 +869,10 @@ export function setupHeartScene(): LoopController | null {
     };
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
 
-    // Reticle hover detection — raycast against the heart's solid slice
-    // meshes each frame and report hits to the shared hover registry.
     const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
     const heartRaycaster = new Raycaster();
     const heartPointerNdc = new Vector2();
+    const scratchLabelPos = new Vector3(); // reused every frame in the labels loop below
 
 	const scene = new Scene();
 	scene.fog = new FogExp2(0x020308, 0.035);
@@ -657,7 +880,7 @@ export function setupHeartScene(): LoopController | null {
 	const camera = new PerspectiveCamera(38, 1, 0.1, 100);
 	camera.position.set(0, 0.02, 6.9);
 
-	const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
+	const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance', stencil: true });
 	renderer.localClippingEnabled = true;
 	renderer.setClearColor(0x000000, 0); 
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -670,9 +893,9 @@ export function setupHeartScene(): LoopController | null {
 	renderPass.clearAlpha = 0;
 
 	const bloomPass = new UnrealBloomPass(
-		new Vector2(window.innerWidth, window.innerHeight),
-		1.2, 
-		0.4, 
+		new Vector2(window.innerWidth/2, window.innerHeight/2),
+		0.1, 
+		0.1, 
 		0.9  
 	);
 
@@ -765,13 +988,12 @@ export function setupHeartScene(): LoopController | null {
 	composer.addPass(bloomPass);
 	composer.addPass(inkPass);
 
-	const fireSystem = createWebGLFireSystem(250); 
+	const fireSystem = createWebGLFireSystem(140, spotlightUniforms); 
 	scene.add(fireSystem.mesh);
 
 	const heartGroup = new Group();
 	scene.add(heartGroup);
 
-	// Standard Environmental Lights
 	const ambient = new AmbientLight(0x4da2ff, 1.8);
 	const key = new PointLight(0xa6d8ff, 95, 14);
 	key.position.set(3, 2.8, 4);
@@ -779,7 +1001,6 @@ export function setupHeartScene(): LoopController | null {
 	blue.position.set(-3, -1.8, 3);
 	scene.add(ambient, key, blue);
 
-	// Dedicated hardware hardware spotlight source for real volumetric lighting glare
 	const spotlightPointLight = new PointLight(0x8fdcff, 0, 5);
 	scene.add(spotlightPointLight);
 
@@ -836,9 +1057,10 @@ export function setupHeartScene(): LoopController | null {
 	const screenGrid = new Mesh(new PlaneGeometry(80, 80), gridMaterial);
 	screenGrid.position.z = -15; 
 	scene.add(screenGrid);
-	let slices: SliceHolder[] = [];
 
-	// Find this block inside setupHeartScene():
+	let slices: SliceHolder[] = [];
+	let solidMeshes: Mesh[] = []; 
+
 	const loader = new GLTFLoader();
 	loader.setMeshoptDecoder(MeshoptDecoder);
 
@@ -846,7 +1068,8 @@ export function setupHeartScene(): LoopController | null {
 		'/heart-meshopt.glb',
 		(gltf) => {
 			runWorkerSlicing(mergeModelGeometry(gltf.scene), heartGroup, (result) => {
-				slices = result;
+				slices = result.slices;
+				solidMeshes = result.solids;
 				renderer.compile(scene, camera);
 				markReady('heart');
 			});
@@ -856,7 +1079,8 @@ export function setupHeartScene(): LoopController | null {
 			const fallback = new SphereGeometry(1.2, 64, 32).toNonIndexed();
 			fallback.scale(0.82, 1.16, 0.72);
 			runWorkerSlicing([fallback], heartGroup, (result) => {
-				slices = result;
+				slices = result.slices;
+				solidMeshes = result.solids;
 				renderer.compile(scene, camera);
 				markReady('heart');
 			});
@@ -869,16 +1093,12 @@ export function setupHeartScene(): LoopController | null {
         const BORDER_START = 0.88;
         const BORDER_END   = 0.91;
         const SNAP_OUT     = 0.92; 
-    
-        prevProgress = progress;
         
-        // ── 1. Progress bar Filling ───────────────────────────────────────────
         if (progressFill && progressContainer) {
             const fillPct = Math.min(progress / BORDER_START, 1.0) * 100;
             progressFill.style.height = `${fillPct}%`;
         }
 
-		// ── 2. Unified Snap Out Math ──────────────────────────────────────────
 		let rectOpacity = 1;
 		let rectScale = 1;
 
@@ -898,7 +1118,7 @@ export function setupHeartScene(): LoopController | null {
 			const pushOutwardX = (rectScale - 1) * 400; 
 			progressContainer.style.transform = `translate3d(${pushOutwardX}px, 0, 0) scale(${rectScale})`;
 		}
-		// ── 3. SVG border drawing & Scaling (With Pre-filled Scrollbar Segment) ──
+
         if (borderPaths.length === 2 && borderSvg) {
 			const topScrollbarLength = (cachedH / 2) - pTop;
 			const botScrollbarLength = pBot - (cachedH / 2);
@@ -931,7 +1151,6 @@ export function setupHeartScene(): LoopController | null {
             }
         }
     
-        // ── 4. Existing DOM updates ───────────────────────────────────────────
         section.style.setProperty('--heart-opacity', String(heartFade));
         section.style.setProperty('--heart-darkness', String(state.inkProgress));
         section.style.setProperty('--hud-opacity', String(hudProgress));
@@ -945,7 +1164,6 @@ export function setupHeartScene(): LoopController | null {
     
         section.classList.toggle('is-terminal', terminalProgress > 0.35);
     
-        // ── 5. Typography Sequence ────────────────────────────────────────────
         if (heroCopyEl && lineOne && lineTwo) {
             heroCopyEl.style.opacity = progress >= SNAP_OUT ? '1' : '0';
             
@@ -981,119 +1199,170 @@ export function setupHeartScene(): LoopController | null {
 	}
 
     const render = (time: number): void => {
+        const scrollVelocity = Math.abs(currentProgress - prevProgress);
+        prevProgress = currentProgress;
+        
         currentProgress = lerp(currentProgress, targetProgress, SCROLL_DAMPING);
 
         if (Math.abs(currentProgress - targetProgress) < 0.0001) {
             currentProgress = targetProgress;
         }
+        
+        maxProgress = Math.max(maxProgress, currentProgress);
 
         const state = evaluateScrollState(currentProgress);
         applyDOMScrollState(state);
 
-        const { rotateHorizontal, rotateVertical, dissectionProgress, heartFade, fireProgress, inkProgress, progress } = state;
+        const { rotateHorizontal, rotateVertical, dissectionProgress, heartFade, inkProgress, progress } = state;
+
+		if (dissectionProgress >= 0.999 && currentProgress <= TIMELINE.fireOut.start) {
+            fireActive = true;
+        } else {
+            fireActive = false;
+        }
+
+        if (scrollVelocity > 0.02) {
+            decoupledFireIntensity = fireActive ? 1.0 : 0.0;
+        } else {
+            decoupledFireIntensity = lerp(decoupledFireIntensity, fireActive ? 1.0 : 0.0, 0.08);
+        }
+
+        const timeSec = time * 0.001;
+        const bpm = (window as any).DEV_STOP_PULSE ? 0 : 65; 
+        const beatPhase = (timeSec * (bpm / 60)) % 1.0;
+
+        let radialPulse = 0;   
+        let longPulse = 0;     
+        let twistPulse = 0;    
+
+        if (beatPhase < 0.12) {
+            const t = beatPhase / 0.12;
+            radialPulse = Math.sin(t * Math.PI) * 0.01;
+            longPulse = Math.sin(t * Math.PI) * 0.005;
+            twistPulse = Math.sin(t * Math.PI) * 0.01;
+        } else if (beatPhase < 0.42) {
+            const t = (beatPhase - 0.12) / 0.30;
+            radialPulse = -Math.sin(t * Math.PI) * 0.05; 
+            longPulse = -Math.sin(t * Math.PI) * 0.075;
+            twistPulse = Math.sin(t * Math.PI) * 0.14; 
+        } else if (beatPhase < 0.62) {
+            const t = (beatPhase - 0.42) / 0.20;
+            radialPulse = Math.sin(t * Math.PI) * 0.015; 
+            longPulse = Math.sin(t * Math.PI) * 0.01;
+            twistPulse = -Math.sin(t * Math.PI) * 0.03;
+        }
+
+        const flatlineFactor = 1.0 - smoothstep(0.0, 0.06, dissectionProgress);
 
         heartGroup.rotation.y = rotateHorizontal * Math.PI * 2 + Math.sin(time * 0.00022) * 0.035 * heartFade;
         heartGroup.rotation.x = -0.08 + rotateVertical * Math.PI * 2;
-        heartGroup.rotation.z = lerp(0, -0.03, rotateVertical);
+        heartGroup.rotation.z = lerp(0, -0.03, rotateVertical);	
+        
         camera.position.z = lerp(6.9, 8.45, dissectionProgress);
-
         mouse.currentX = lerp(mouse.currentX, mouse.targetX, 0.05);
         mouse.currentY = lerp(mouse.currentY, mouse.targetY, 0.05);
-
         camera.position.x = mouse.currentX * 0.4;
         camera.position.y = lerp(0.02, -0.03, dissectionProgress) + mouse.currentY * 0.4;
-        
         camera.lookAt(0, 0, 0);
+        camera.updateMatrixWorld();
 
+        // Was smoothstep(0.40, 0.72, progress) — an independent window that finished ramping
+        // before the slices (TIMELINE.dissection: 0.62–0.80) had visibly separated. Keying off
+        // dissectionProgress locks the color change to the same clock as the mechanical reveal.
+        const lightPhase = dissectionProgress * (1 - smoothstep(0.92, 0.98, progress));
+        
         slices.forEach((slice, i) => {
             const direction = slice.userData.direction ?? i - 2;
             const eased = 1 - Math.pow(1 - dissectionProgress, 3);
+            
             slice.position.y = slice.userData.baseY + direction * eased * SLICE_GAP;
             slice.position.z = Math.abs(direction) * eased * 0.04;
-        });
 
-        const lightPhase = smoothstep(0.40, 0.72, progress) * (1 - smoothstep(0.92, 0.98, progress));
-        slices.forEach((slice, i) => {
+            const sliceIndex = typeof slice.userData.index === 'number' ? slice.userData.index : i;
+            const apexIntensity = 1.0 - (sliceIndex / (SLICE_COUNT - 1));
+
+            const sliceScaleX = 1.0 + (radialPulse * (0.4 + apexIntensity * 1.2)) * flatlineFactor;
+            const sliceScaleZ = 1.0 + (radialPulse * (0.4 + apexIntensity * 1.2)) * flatlineFactor;
+            const sliceScaleY = 1.0 + (longPulse * (0.2 + apexIntensity * 1.6)) * flatlineFactor;
+            slice.scale.set(sliceScaleX, sliceScaleY, sliceScaleZ);
+
+            if (flatlineFactor > 0.001) {
+                const localLift = -longPulse * apexIntensity * 0.42 * flatlineFactor;
+                slice.position.y += localLift;
+            }
+
+            slice.rotation.y = twistPulse * apexIntensity * flatlineFactor;
+
             const { materials } = slice.userData;
-            const idx = typeof slice.userData.index === 'number' ? slice.userData.index : i;
-            const order = idx / Math.max(SLICE_COUNT - 1, 1);
+            const order = sliceIndex / Math.max(SLICE_COUNT - 1, 1);
             const delay = order * 0.16;
             const sliceLight = clamp((lightPhase - delay) / 0.32);
 
-            materials.solid.emissive.setRGB(sliceLight, sliceLight * 0.58, sliceLight * 0.24 * 0.75);
-            materials.solid.emissiveIntensity = lerp(0.04, 1.5, sliceLight);
-
-            // Subtle lowered maximum opacities applied to the runtime loop targets
-            materials.wire.opacity = lerp(0.12, 0.45, sliceLight);
-            materials.edges.opacity = lerp(0.08, 0.40, sliceLight);
+            // Continuous cool -> hot emissive transition (was a hard if/else that snapped the
+            // color instantly at sliceLight > 0.05, and pushed intensity to 6.5 which blew the
+            // G/B channels past the ACES tonemap ceiling before R caught up — read as a flat
+            // clipped blue instead of a graded hot glow).
+            materials.solid.emissive.lerpColors(EMISSIVE_COOL, EMISSIVE_HOT, sliceLight);
+            materials.solid.emissiveIntensity = lerp(0.2, EMISSIVE_PEAK_INTENSITY, sliceLight);
+            
+            materials.wire.opacity = lerp(0.15, 0.85, sliceLight);
+            materials.edges.opacity = lerp(0.10, 0.85, sliceLight);
         });
 
-        scene.updateMatrixWorld(true);
+		heartGroup.updateMatrixWorld(true);
 
-        if (hasFinePointer) {
-            if (slices.length) {
-                heartPointerNdc.set(mouse.targetX, mouse.targetY);
-                heartRaycaster.setFromCamera(heartPointerNdc, camera);
-                const solids = slices.map((slice) => slice.children[0]);
-                
-                // 1. Check physical intersection
-                const intersects = heartRaycaster.intersectObjects(solids, false);
-                const isIntersecting = intersects.length > 0;
-				const isHoveringHeart = intersects.length > 0;
-                document.documentElement.style.setProperty('--light-active', isHoveringHeart ? '1' : '0');
-                // 2. Logic Gate
-                const isVisible = inkProgress < 0.5; 
-                
-                // 3. Emit Pub/Sub Hover State
-                setHoverTarget('heart', isIntersecting && isVisible);
+        if (hasFinePointer && solidMeshes.length > 0) {
+            heartPointerNdc.set(mouse.targetX, mouse.targetY);
+            heartRaycaster.setFromCamera(heartPointerNdc, camera);
+            
+            const intersects = heartRaycaster.intersectObjects(solidMeshes, false);
+            isIntersecting = intersects.length > 0;
+            isVisible = inkProgress < 0.5; 
+            
+            if (isIntersecting && isVisible) {
+                spotlightConfig.targetPos.copy(intersects[0].point);
+            }
+            
+            if (isHoveringPrevState !== isIntersecting) {
+                document.documentElement.style.setProperty('--light-active', isIntersecting ? '1' : '0');
+                isHoveringPrevState = isIntersecting;
+            }
+            
+            setHoverTarget('heart', isIntersecting && isVisible);
 
-                // =========================================================
-                // PHASE 2: VOLUMETRIC SPOTLIGHT INTERACTION
-                // =========================================================
-                if (isIntersecting && isVisible) {
-                    // Update configuration targets
-                    spotlightConfig.targetPos.copy(intersects[0].point);
-                    spotlightConfig.targetIntensity = 1.0;
-                } else {
-                    spotlightConfig.targetIntensity = 0.0;
-                }
+            spotlightConfig.targetIntensity = (isIntersecting && isVisible) ? 1.0 : 0.0;
+        } else {
+            setHoverTarget('heart', false);
+        }
 
-				// 🟢 UPDATE NEW TELEMETRY PANELS WITH LIVE WEBGL DATA 🟢
-        // Match the visibility to the old HUD timeline (0.02 to 0.60)
-        // 🟢 Replace your panel positioning variables with these:
         const panelVisibility = (currentProgress >= 0.02 && currentProgress <= 0.60) ? 1.0 : 0.0;
 
         const SCALE = 0.40;
         const PANEL_BASE_WIDTH = 530; 
-        const actualPanelWidth = PANEL_BASE_WIDTH * SCALE; // 212px
+        const actualPanelWidth = PANEL_BASE_WIDTH * SCALE;
 
-        const leftPanelX = window.innerWidth * (-0.1); // 2% margin          
+        const leftPanelX = window.innerWidth * (-0.1); 
         const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
         const panelY = window.innerHeight * 0.22;      
-      // ==========================================
-        // 3D CYLINDER DISTORTION MATH
-        // ==========================================
+
         const screenWidth = window.innerWidth;
         const screenCenter = screenWidth / 2;
-        const maxRotationY = 5;  // Max inward tilt in degrees
-        const maxDepthZ = -300;   // How far it pushes back into the screen at the edges
+        const maxRotationY = 5;  
+        const maxDepthZ = -300;   
 
-        // --- LEFT PANEL MATH ---
         const leftNormX = (leftPanelX - screenCenter) / screenCenter; 
         const leftRotationY = leftNormX * -maxRotationY; 
         const leftZ = Math.abs(leftNormX) * maxDepthZ;
 
-        // --- RIGHT PANEL MATH ---
         const rightNormX = (rightPanelX - screenCenter) / screenCenter;
         const rightRotationY = rightNormX * -maxRotationY;
         const rightZ = Math.abs(rightNormX) * maxDepthZ;
 
-        // --- Left Viewport Panel (Scroll & Opacity Metrics) ---
         panelManager.update('telemetry-left', {
             x: leftPanelX,
             y: panelY,
-            z: leftZ,                 // <--- New Depth
-            rotationY: leftRotationY, // <--- New Rotation
+            z: leftZ,                 
+            rotationY: leftRotationY, 
             opacity: panelVisibility,
             values: {
                 heartFade: heartFade * 100,
@@ -1103,12 +1372,11 @@ export function setupHeartScene(): LoopController | null {
             }
         });
 
-        // --- Right Viewport Panel (Raycaster & Mouse Metrics) ---
         panelManager.update('telemetry-right', {
-            x: rightPanelX - 300, // (Keeping your -250 offset here)
+            x: rightPanelX - 300,
             y: panelY,
-            z: rightZ,                  // <--- New Depth
-            rotationY: rightRotationY,  // <--- New Rotation
+            z: rightZ,                  
+            rotationY: rightRotationY,  
             opacity: panelVisibility,
             values: {
                 lat: mouse.targetY * 100,
@@ -1117,24 +1385,16 @@ export function setupHeartScene(): LoopController | null {
             }
         });
 
-            } else {
-                setHoverTarget('heart', false);
-            }
-
-			
-        }
-
-		// Smoothly lerp spotlight tracking properties for sleek fluid movement and fading
-		spotlightConfig.intensity = lerp(spotlightConfig.intensity, spotlightConfig.targetIntensity, 0.1);
+		// Snappier, high-precision spotlight tracking
+		spotlightConfig.intensity = lerp(spotlightConfig.intensity, spotlightConfig.targetIntensity, 0.35);
 		if (spotlightConfig.intensity > 0.001) {
-			spotlightConfig.pos.lerp(spotlightConfig.targetPos, 0.12);
+			spotlightConfig.pos.lerp(spotlightConfig.targetPos, 0.45); // Very fast follow
 		}
 		
-		// Synchronize the compiled material uniforms and hardware point light
 		spotlightUniforms.uScannerPos.value.copy(spotlightConfig.pos);
 		spotlightUniforms.uScannerIntensity.value = spotlightConfig.intensity;
 		spotlightPointLight.position.copy(spotlightConfig.pos);
-		spotlightPointLight.intensity = spotlightConfig.intensity * 38.0;
+		spotlightPointLight.intensity = spotlightConfig.intensity * 25.0; // Lowered from 52 so it doesn't clip
 		
         labels.forEach((label, i) => {
             const targetSlice = slices[(SLICE_COUNT - 1) - i];
@@ -1152,7 +1412,7 @@ export function setupHeartScene(): LoopController | null {
                 return;
             }
 
-            const slicePos = new Vector3();
+            const slicePos = scratchLabelPos;
             targetSlice.getWorldPosition(slicePos);
             slicePos.x += isRightSide ? 1.8 : -1.8; 
             slicePos.y += 0.2;  
@@ -1173,7 +1433,7 @@ export function setupHeartScene(): LoopController | null {
             label.style.transform = `translate3d(calc(${x + slideX}px + ${alignOffset}), calc(${y}px - 50%), 0)`;
         });
 
-		fireSystem.update(time, fireProgress);
+		fireSystem.update(time, decoupledFireIntensity);
 
         inkPass.uniforms.uTime.value = time * 0.001;
         inkPass.uniforms.uProgress.value = smoothstep(0.0, 1.0, inkProgress);
@@ -1199,13 +1459,8 @@ export function setupHeartScene(): LoopController | null {
             window.removeEventListener('mousemove', handleMouseMove); 
 			setHoverTarget('heart', false);
 
-			// Telemetry panels: unmounts both InstrumentPanel instances and
-			// removes PanelManager's own centralized mousemove listener.
 			panelManager.destroy();
 
-			// Geometry/material disposal — was only catching Mesh, which
-			// silently skipped the LineSegments (edges) and Points instances
-			// since neither extends Mesh.
 			scene.traverse((obj) => {
 				if (obj instanceof Mesh || obj instanceof LineSegments || obj instanceof Points) {
 					obj.geometry.dispose();
@@ -1217,16 +1472,10 @@ export function setupHeartScene(): LoopController | null {
 				}
 			});
 
-			// Postprocessing: EffectComposer.dispose() releases its own
-			// read/write render targets, but the individual passes can hold
-			// their own GPU resources (e.g. UnrealBloomPass's internal mip
-			// render targets) that need disposing separately.
 			bloomPass.dispose?.();
 			inkPass.dispose?.();
 			composer.dispose();
 
-			// Audio graph: stop both ambient oscillators and close the
-			// context so it doesn't linger as an active audio node graph.
 			fireOsc?.stop();
 			inkOsc?.stop();
 			fireOsc?.disconnect();
