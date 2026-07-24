@@ -394,7 +394,7 @@ export class InstrumentPanel {
                 const config = ref.channel as Extract<ChannelConfig, { type: 'meter' }>;
                 const { min, max } = config;
                 const prev = this.current.has(i) ? (this.current.get(i) as number) : (raw as number);
-                if (Math.abs(prev - (raw as number)) < 0.001) return;
+                if (this.current.has(i) && Math.abs(prev - (raw as number)) < 0.001) return;
                 const next = lerp(prev, raw as number, 0.14);
                 this.current.set(i, next);
                 const t = clamp01((next - min) / (max - min));
@@ -406,7 +406,7 @@ export class InstrumentPanel {
                 const config = ref.channel as Extract<ChannelConfig, { type: 'knob' }>;
                 const { min, max, format } = config;
                 const prev = this.current.has(i) ? (this.current.get(i) as number) : (raw as number);
-                if (Math.abs(prev - (raw as number)) < 0.001) return;
+                if (this.current.has(i) && Math.abs(prev - (raw as number)) < 0.001) return;
                 const next = lerp(prev, raw as number, 0.2);
                 this.current.set(i, next);
                 const t = clamp01((next - min) / (max - min));
