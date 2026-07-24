@@ -313,6 +313,94 @@
 .digital__label { margin-top: 12px; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
 
 /* ---------------------------------------------------------------- */
+/* Recessed Prose Readout (biological/functional text per slice)    */
+/* ---------------------------------------------------------------- */
+.channel--text { width: 100%; text-align: left; }
+.channel--text .text__label { margin-bottom: 8px; font-size: 11px; font-weight: 500; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
+.text__screen {
+  padding: 14px 16px;
+  border-radius: 2px;
+  background: #010a08;
+  border: 1px solid #040d09;
+  box-shadow: inset 0 4px 10px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.04);
+  position: relative;
+  overflow: hidden;
+}
+.text__screen::before {
+  content: ''; position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px) 0 0 / 3px 100%,
+    linear-gradient(180deg, rgba(0,0,0,0.2) 1px, transparent 1px) 0 0 / 100% 2px;
+  pointer-events: none; z-index: 3;
+}
+.text__value {
+  display: block;
+  font-family: var(--mono-font);
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 500;
+  color: #5effa4;
+  text-shadow: 0 0 6px rgba(94,255,164,0.5);
+  position: relative;
+  z-index: 2;
+  will-change: filter, opacity;
+  animation: phosphor-current-drift 11.2s infinite ease-in-out;
+}
+
+/* ---------------------------------------------------------------- */
+/* Integrated Slice Label Index (inside the panel)                  */
+/* ---------------------------------------------------------------- */
+.panel__label-list {
+  padding: 8px 0;
+  border-bottom: 1px solid #000000;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03);
+}
+
+.panel__label-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.08em;
+  transition: color 0.3s ease, text-shadow 0.3s ease, background 0.3s ease;
+  cursor: default;
+  border-radius: 2px;
+}
+
+.panel__label-row.is-active {
+  color: var(--accent-cyan);
+  text-shadow: 0 0 8px rgba(127, 212, 255, 0.5);
+  background: rgba(127, 212, 255, 0.06);
+}
+
+.panel__label-num {
+  font-weight: 700;
+  min-width: 20px;
+  opacity: 0.6;
+}
+
+.panel__label-row.is-active .panel__label-num {
+  opacity: 1;
+}
+
+.panel__label-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------------------------------------------------------------- */
+/* Collapsible Detail Section (height-animated accordion)           */
+/* ---------------------------------------------------------------- */
+.panel__detail-section {
+  overflow: hidden;
+  will-change: height;
+}
+
+/* ---------------------------------------------------------------- */
 /* Heavy Knife Switch / Rocker Mechanisms                           */
 /* ---------------------------------------------------------------- */
 .channel--toggle { width: 130px; text-align: center; }

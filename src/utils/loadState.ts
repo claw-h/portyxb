@@ -22,9 +22,9 @@
 // importer the same singleton instance for free — no window global needed.
 // ---------------------------------------------------------------------------
 
-export type ReadyKey = 'fonts' | 'heart' | 'dream' | 'minSplash';
+export type ReadyKey = 'fonts' | 'heart' | 'minSplash';
 
-const ALL_KEYS: ReadyKey[] = ['fonts', 'heart', 'dream', 'minSplash'];
+const ALL_KEYS: ReadyKey[] = ['fonts', 'heart', 'minSplash'];
 const pending = new Set<ReadyKey>(ALL_KEYS);
 
 type ProgressListener = (percent: number) => void;

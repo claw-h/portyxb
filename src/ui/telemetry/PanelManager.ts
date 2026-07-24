@@ -9,6 +9,8 @@ export interface PanelUpdatePayload {
     z?: number;         // Add this
     rotationY?: number; // Add this
     opacity?: number;
+    scaleY?: number;          // Detail section height fraction (0–1)
+    activeLabel?: number;     // Which label row to highlight (-1 = none)
     values?: TelemetryData;
 }
 
@@ -21,17 +23,18 @@ export class PanelManager {
     // how fast mousemove events actually fire.
     private lastMouseX = 0;
     private lastMouseY = 0;
-    private lightRafPending = false;
+    private _rafId: number | null = null;
 
     private _onMouseMove = (e: MouseEvent) => {
         this.lastMouseX = e.clientX;
         this.lastMouseY = e.clientY;
-        if (this.lightRafPending) return;
-        this.lightRafPending = true;
-        requestAnimationFrame(() => {
-            this.lightRafPending = false;
-            this.panels.forEach((panel) => panel.updateLightPosition(this.lastMouseX, this.lastMouseY));
-        });
+        
+        if (this._rafId === null) {
+            this._rafId = requestAnimationFrame(() => {
+                this.panels.forEach((panel) => panel.updateLightPosition(this.lastMouseX, this.lastMouseY));
+                this._rafId = null;
+            });
+        }
     };
 
     /**
@@ -78,6 +81,14 @@ export class PanelManager {
             panel.setOpacity(payload.opacity);
         }
 
+        if (payload.scaleY !== undefined) {
+            panel.setDetailScale(payload.scaleY);
+        }
+
+        if (payload.activeLabel !== undefined) {
+            panel.setActiveLabel(payload.activeLabel);
+        }
+
         if (payload.values) {
             panel.update(payload.values);
         }
@@ -99,6 +110,7 @@ export class PanelManager {
      */
     public destroy() {
         window.removeEventListener('mousemove', this._onMouseMove);
+        if (this._rafId !== null) cancelAnimationFrame(this._rafId);
         this.panels.forEach(panel => panel.destroy());
         this.panels.clear();
     }
