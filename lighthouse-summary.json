@@ -1,0 +1,56 @@
+{
+  "score": 0.35,
+  "tbt": 4681,
+  "longTasks": [
+    {
+      "url": "http://localhost:4321/_astro/HeartScene.vvc0n1M1.js",
+      "duration": 3068,
+      "startTime": 5815.79285
+    },
+    {
+      "url": "Unattributable",
+      "duration": 1669,
+      "startTime": 698.93095
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.eySc0SLP.js",
+      "duration": 729,
+      "startTime": 4798.79285
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.eySc0SLP.js",
+      "duration": 662,
+      "startTime": 8883.79285
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.eySc0SLP.js",
+      "duration": 210,
+      "startTime": 4319.8619
+    },
+    {
+      "url": "http://localhost:4321/_astro/HeartScene.vvc0n1M1.js",
+      "duration": 176,
+      "startTime": 4622.79285
+    },
+    {
+      "url": "Unattributable",
+      "duration": 118,
+      "startTime": 2367.93095
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.eySc0SLP.js",
+      "duration": 114,
+      "startTime": 4205.8619
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.eySc0SLP.js",
+      "duration": 72,
+      "startTime": 5583.79285
+    },
+    {
+      "url": "Unattributable",
+      "duration": 50,
+      "startTime": 648.93095
+    }
+  ]
+}

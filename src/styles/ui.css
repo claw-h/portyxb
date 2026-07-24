@@ -6,6 +6,11 @@
 *, *::before, *::after {
     cursor: none !important;
 }
+/* Add to your global CSS file (e.g., index.css or main.css) */
+html, body {
+    overscroll-behavior-x: none; /* Disables macOS swipe-to-navigate gesture */
+    touch-action: pan-y;          /* Prevents unwanted horizontal touch gestures */
+}
 
 @font-face {
   font-family: 'Unbounded';
@@ -142,16 +147,7 @@
     91% { transform: translate3d(var(--cursor-x, 0px), var(--cursor-y, 0px), 0) translate(1px, -1px) scale(0.85); }
 }
 
-[data-dimension-label] {
-    position: fixed;
-    top: 0;
-    left: 0;
-    margin: 0;
-    color: #4da2ff;
-    font-family: monospace;
-    letter-spacing: 1px;
-    will-change: transform, opacity, filter;
-}
+/* [data-dimension-label] styles removed — labels are now inside the InstrumentPanel */
 /* ==========================================================================
    HEART SKEUOMORPHIC DOME (Phase 3)
    ========================================================================== */

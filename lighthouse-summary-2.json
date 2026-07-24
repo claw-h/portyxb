@@ -1,0 +1,56 @@
+{
+  "score": 0.37,
+  "tbt": 6830.023499999999,
+  "longTasks": [
+    {
+      "url": "http://localhost:4321/_astro/HeartScene.BdngXi5l.js",
+      "duration": 5699.999999999999,
+      "startTime": 4781.429499999999
+    },
+    {
+      "url": "Unattributable",
+      "duration": 1644.9999999999998,
+      "startTime": 800.4765
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.BDxkKXZ2.js",
+      "duration": 619,
+      "startTime": 10481.429499999998
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.BDxkKXZ2.js",
+      "duration": 240,
+      "startTime": 4456.429499999999
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.BDxkKXZ2.js",
+      "duration": 128,
+      "startTime": 4207.429499999999
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.BDxkKXZ2.js",
+      "duration": 80,
+      "startTime": 4335.429499999999
+    },
+    {
+      "url": "http://localhost:4321/",
+      "duration": 66,
+      "startTime": 683.4765
+    },
+    {
+      "url": "http://localhost:4321/_astro/index.astro_astro_type_script_index_0_lang.BDxkKXZ2.js",
+      "duration": 62,
+      "startTime": 4696.429499999999
+    },
+    {
+      "url": "Unattributable",
+      "duration": 53,
+      "startTime": 602.4765
+    },
+    {
+      "url": "Unattributable",
+      "duration": 51,
+      "startTime": 749.4765
+    }
+  ]
+}

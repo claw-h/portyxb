@@ -19,8 +19,6 @@ import {
 	ShaderMaterial,
 	Box3,
 	AlwaysStencilFunc,
-	EqualStencilFunc,
-	KeepStencilOp,
 	ReplaceStencilOp,
 	Scene, 
 	PerspectiveCamera, 
@@ -34,8 +32,6 @@ import {
 	Vector3,
 	Raycaster
 } from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -45,7 +41,7 @@ import { type PanelConfig } from '../ui/telemetry/types';
 import { clamp, lerp, smoothstep } from '../utils/math';
 import { createLoopController } from '../utils/canvas';
 import type { LoopController } from '../utils/canvas';
-import { markReady } from '../utils/loadState.ts';
+import { markReady } from '../utils/loadState';
 import { setHoverTarget } from '../utils/hoverTargets';
 
 // ---------------------------------------------------------------------------
@@ -74,7 +70,7 @@ interface ScrollState {
 	rotateHorizontal: number;
 	rotateVertical: number;
 	dissectionProgress: number;
-	fireProgress: number;
+	dischargeProgress: number;
 	inkProgress: number;
 	hudProgress: number;
 	terminalProgress: number;
@@ -84,19 +80,34 @@ const SLICE_COUNT = 5;
 const SLICE_GAP = 0.36;
 const SCROLL_DAMPING = 0.08; 
 
-// Reused every frame in the dissection reveal — never allocate Color objects inside the render loop.
+const SLICE_NAMES: string[] = [
+    'APEX',
+    'INFERIOR VENTRICLE',
+    'MID-VENTRICLE',
+    'VALVE PLANE',
+    'BASE',
+];
+
+const SLICE_DESCRIPTIONS: string[] = [
+	'The heart\'s blunt lower point, formed mainly by the left ventricle\'s thick muscular wall. This is where the apical impulse can be felt against the chest.',
+	'Thick left ventricular myocardium doing the heavy lifting of systemic circulation, alongside the thinner right ventricular free wall.',
+	'Both ventricles in cross-section, separated by the interventricular septum. Papillary muscles and chordae tendineae anchor the valve leaflets here.',
+	'The atrioventricular boundary: mitral and tricuspid valves control flow from atria into ventricles, preventing backflow during contraction.',
+	'The heart\'s upper surface, where the great vessels take root: aorta, pulmonary artery, superior vena cava, and pulmonary veins.',
+];
+
 const EMISSIVE_COOL = new Color(0x0a1f3d);
 const EMISSIVE_HOT = new Color(0.1, 0.6, 1.0);
-const EMISSIVE_PEAK_INTENSITY = 2.4; // ACES tonemapping starts eating the G/B channels well before 6.5 — tune from here
+const EMISSIVE_PEAK_INTENSITY = 2.4; 
 
 const TIMELINE = {
 	heartFade: { start: 0.035, end: 0.11 },
 	rotateH: { start: 0.1, end: 0.34 },
 	rotateV: { start: 0.34, end: 0.58 },
 	dissection: { start: 0.62, end: 0.80 },  
-	fireIn: { start: 0.74, end: 0.84 },
-	fireOut: { start: 0.86, end: 0.90 }, 
-	ink: { start: 0.84, end: 0.90 },         
+	dischargeIn: { start: 0.74, end: 0.84 },
+	dischargeOut: { start: 0.86, end: 0.90 }, 
+	ink: { start: 0.80, end: 0.92 },         
 	hudIn: { start: 0.02, end: 0.15 },
 	hudOut: { start: 0.50, end: 0.60 },
 	terminal: { start: 0.85, end: 0.95 }
@@ -106,86 +117,26 @@ const TIMELINE = {
 // Geometry helpers
 // ---------------------------------------------------------------------------
 
-function mergeModelGeometry(model: Object3D): BufferGeometry[] {
-	const geometries: BufferGeometry[] = [];
-	const modelBox = new Box3();
-	model.updateWorldMatrix(true, true);
+// Geometry helpers removed (moved to heartWorker.ts)
 
-	model.traverse((child) => {
-		if (!(child instanceof Mesh) || !child.geometry) return;
-		const geometry = child.geometry.clone() as BufferGeometry;
-
-		['position', 'normal'].forEach((key) => {
-			const attr = geometry.attributes[key];
-			if (attr && !(attr.array instanceof Float32Array)) {
-				const floatArray = new Float32Array(attr.count * attr.itemSize);
-				for (let i = 0; i < attr.count; i++) {
-					if (attr.itemSize >= 1) floatArray[i * attr.itemSize] = attr.getX(i);
-					if (attr.itemSize >= 2) floatArray[i * attr.itemSize + 1] = attr.getY(i);
-					if (attr.itemSize >= 3) floatArray[i * attr.itemSize + 2] = attr.getZ(i);
-				}
-				geometry.setAttribute(key, new BufferAttribute(floatArray, attr.itemSize));
-			}
-		});
-
-		geometry.applyMatrix4(child.matrixWorld);
-		geometry.deleteAttribute('uv');
-		const nonIndexed = geometry.toNonIndexed();
-		nonIndexed.computeBoundingBox();
-		modelBox.union(nonIndexed.boundingBox!);
-		geometries.push(nonIndexed);
-	});
-
-	if (!geometries.length) return [];
-
-	const center = new Vector3();
-	const size = new Vector3();
-	modelBox.getCenter(center);
-	modelBox.getSize(size);
-	const scale = 3.05 / Math.max(size.x, size.y, size.z);
-	const normalize = new Matrix4()
-		.makeTranslation(-center.x, -center.y, -center.z)
-		.premultiply(new Matrix4().makeScale(scale, scale, scale));
-
-	return geometries.map((geometry) => {
-		geometry.applyMatrix4(normalize);
-		geometry.computeVertexNormals();
-		return geometry;
-	});
-}
-
-function runWorkerSlicing(
-	geometries: BufferGeometry[],
+function loadHeartGeometry(
+	url: string,
+	sliceCount: number,
 	group: Group,
 	onDone: (result: { slices: SliceHolder[]; solids: Mesh[] }) => void
 ) {
-	const box = new Box3();
-	geometries.forEach((g) => {
-		g.computeBoundingBox();
-		box.union(g.boundingBox!);
-	});
-	
-	const minY = box.min.y;
-	const maxY = box.max.y;
-	const vertexBuffers = geometries.map(g => g.attributes.position.array as Float32Array);
-
 	const worker = new Worker(new URL('./heartWorker.ts', import.meta.url), { type: 'module' });
 	
 	worker.onmessage = async (e) => {
-		const { slicedBuffers } = e.data;
-		geometries.forEach(g => g.dispose()); 
+		const { slicedPositions, slicedNormals, slicedEdges } = e.data;
 		
-		const result = await buildSlicesFromBuffers(slicedBuffers, group);
+		const result = await buildSlicesFromBuffers(slicedPositions, slicedNormals, slicedEdges, group);
+		
 		onDone(result);
 		worker.terminate();
 	};
 
-	worker.postMessage({
-		vertexBuffers,
-		minY,
-		maxY,
-		sliceCount: SLICE_COUNT
-	}, vertexBuffers.map(b => b.buffer));
+	worker.postMessage({ url, sliceCount });
 }
 
 // =========================================================
@@ -196,7 +147,7 @@ const spotlightConfig = {
 	targetPos: new Vector3(0, 0, 0),
 	intensity: 0,
 	targetIntensity: 0,
-	radius: 1.1, // Concentrated beam area
+	radius: 1.1,
 };
 
 const spotlightUniforms = {
@@ -244,21 +195,22 @@ const injectSpotlightReveal = (shader: any) => {
 };
 
 async function buildSlicesFromBuffers(
-	slicedBuffers: Float32Array[],
+	slicedPositions: Float32Array[],
+	slicedNormals: Float32Array[],
+	slicedEdges: Float32Array[],
 	group: Group,
 ): Promise<{ slices: SliceHolder[]; solids: Mesh[] }> {
 	const slices: SliceHolder[] = [];
 	const solids: Mesh[] = [];
 
-	// Optimized Hybrid Bio-Holographic Solid Material (Performance focused)
 	const solidMaterial = new MeshPhysicalMaterial({
 		color: 0x081c33,
 		emissive: 0x0a1f3d,
 		emissiveIntensity: 0.2,
 		transparent: true,
-		opacity: 0.75,         // Much higher opacity for solid physical presence
-		roughness: 0.12,       // Very low roughness for a slick, wet specular highlight
-		metalness: 0.65,       // High metalness fakes dense, glossy organic tissue
+		opacity: 0.75,
+		roughness: 0.12, 
+		metalness: 0.65, 
 		side: DoubleSide,
 		depthWrite: false,
 		stencilWrite: true,
@@ -285,24 +237,30 @@ async function buildSlicesFromBuffers(
 	wireMaterial.onBeforeCompile = injectSpotlightReveal;
 	edgeMaterial.onBeforeCompile = injectSpotlightReveal;
 
-	for (let i = 0; i < slicedBuffers.length; i++) {
-		const buffer = slicedBuffers[i];
-		if (!buffer || buffer.length === 0) continue;
+	for (let i = 0; i < slicedPositions.length; i++) {
+		const posBuffer = slicedPositions[i];
+		const normBuffer = slicedNormals[i];
+		const edgeBuffer = slicedEdges[i];
+		
+		if (!posBuffer || posBuffer.length === 0) continue;
 
 		const sliceGeometry = new BufferGeometry();
-		sliceGeometry.setAttribute('position', new BufferAttribute(buffer, 3));
-		sliceGeometry.computeVertexNormals();
+		sliceGeometry.setAttribute('position', new BufferAttribute(posBuffer, 3));
+		sliceGeometry.setAttribute('normal', new BufferAttribute(normBuffer, 3));
 		sliceGeometry.computeBoundingBox();
+
+		const edgesGeometry = new BufferGeometry();
+		edgesGeometry.setAttribute('position', new BufferAttribute(edgeBuffer, 3));
 
 		const holder = new Group() as SliceHolder;
 		holder.userData.baseY = 0;
-		holder.userData.direction = i - (slicedBuffers.length - 1) / 2;
+		holder.userData.direction = i - (slicedPositions.length - 1) / 2;
 		holder.userData.phase = i * 0.34;
 		holder.userData.index = i;
 
 		const solid = new Mesh(sliceGeometry, solidMaterial);
 		const wire = new Mesh(sliceGeometry.clone(), wireMaterial);
-		const edges = new LineSegments(new EdgesGeometry(sliceGeometry, 22), edgeMaterial);
+		const edges = new LineSegments(edgesGeometry, edgeMaterial);
 
 		wire.scale.setScalar(1.006);
 		edges.scale.setScalar(1.011);
@@ -325,7 +283,7 @@ function evaluateScrollState(progress: number): ScrollState {
         rotateHorizontal: smoothstep(TIMELINE.rotateH.start, TIMELINE.rotateH.end, p),
         rotateVertical: smoothstep(TIMELINE.rotateV.start, TIMELINE.rotateV.end, p),
         dissectionProgress: smoothstep(TIMELINE.dissection.start, TIMELINE.dissection.end, p),
-        fireProgress: smoothstep(TIMELINE.fireIn.start, TIMELINE.fireIn.end, p) * (1 - smoothstep(TIMELINE.fireOut.start, TIMELINE.fireOut.end, p)),
+        dischargeProgress: smoothstep(TIMELINE.dischargeIn.start, TIMELINE.dischargeIn.end, p) * (1 - smoothstep(TIMELINE.dischargeOut.start, TIMELINE.dischargeOut.end, p)),
         inkProgress: smoothstep(TIMELINE.ink.start, TIMELINE.ink.end, p),
         hudProgress: smoothstep(TIMELINE.hudIn.start, TIMELINE.hudIn.end, p) * (1 - smoothstep(TIMELINE.hudOut.start, TIMELINE.hudOut.end, p)),
         terminalProgress: smoothstep(TIMELINE.terminal.start, TIMELINE.terminal.end, p),
@@ -340,49 +298,174 @@ function turbulence(i: number, y: number, t: number): number {
 	);
 }
 
-const FLAME_BASE_Y = -3.3;       
-const FLAME_HALF_HEIGHT = 2.6;   
-const FLAME_HALF_WIDTH = 1.3;    
+// ---------------------------------------------------------------------------
+// Electrical discharge system
+// ---------------------------------------------------------------------------
 
-function flameScaleY(intensity: number): number {
-	return 0.55 + intensity * 0.55;
+const DISCHARGE_ORIGIN_Y = 0;
+const DISCHARGE_ANCHOR_JITTER = 0.85;
+
+const ARC_POOL_SIZE = 12;
+const ARC_SUBDIVISIONS = 5;
+const ARC_SEGMENT_COUNT = 2 ** ARC_SUBDIVISIONS;
+const ARC_JITTER = 0.34;
+const ARC_MIN_LIFE = 0.06;
+const ARC_MAX_LIFE = 0.14;
+const ARC_HOT_COLOR = EMISSIVE_HOT.clone().multiplyScalar(5.5);
+const ARC_COOL_COLOR = EMISSIVE_COOL.clone().multiplyScalar(2.4);
+
+const scratchAnchorA = new Vector3();
+const scratchAnchorB = new Vector3();
+const scratchSparkSpawn = new Vector3();
+
+function subdivideBolt(a: Vector3, b: Vector3, depth: number, jitter: number, out: number[]): void {
+	if (depth <= 0) {
+		out.push(b.x, b.y, b.z);
+		return;
+	}
+
+	const dir = new Vector3().subVectors(b, a);
+	const perp = new Vector3(-dir.y, dir.x, dir.z * 0.35);
+	if (perp.lengthSq() < 0.0001) perp.set(1, 0, 0);
+	perp.normalize();
+
+	const kick = (Math.random() - 0.5) * 2 * jitter * dir.length();
+	const mid = a.clone().lerp(b, 0.5).addScaledVector(perp, kick);
+
+	subdivideBolt(a, mid, depth - 1, jitter * 0.6, out);
+	subdivideBolt(mid, b, depth - 1, jitter * 0.6, out);
 }
 
-function flameScaleX(intensity: number): number {
-	return 0.75 + intensity * 0.35;
+function buildBoltPositions(a: Vector3, b: Vector3, target: Float32Array): void {
+	const points: number[] = [a.x, a.y, a.z];
+	subdivideBolt(a, b, ARC_SUBDIVISIONS, ARC_JITTER, points);
+
+	let w = 0;
+	for (let i = 0; i < ARC_SEGMENT_COUNT; i++) {
+		target[w++] = points[i * 3];
+		target[w++] = points[i * 3 + 1];
+		target[w++] = points[i * 3 + 2];
+		target[w++] = points[(i + 1) * 3];
+		target[w++] = points[(i + 1) * 3 + 1];
+		target[w++] = points[(i + 1) * 3 + 2];
+	}
 }
 
-function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms) {
+function pickDischargeAnchors(slices: SliceHolder[], a: Vector3, b: Vector3): boolean {
+	if (slices.length < 2) return false;
+
+	const i = Math.floor(Math.random() * (slices.length - 1));
+	slices[i].getWorldPosition(a);
+	slices[i + 1].getWorldPosition(b);
+
+	a.x += (Math.random() - 0.5) * DISCHARGE_ANCHOR_JITTER;
+	a.z += (Math.random() - 0.5) * DISCHARGE_ANCHOR_JITTER * 0.6;
+	b.x += (Math.random() - 0.5) * DISCHARGE_ANCHOR_JITTER;
+	b.z += (Math.random() - 0.5) * DISCHARGE_ANCHOR_JITTER * 0.6;
+	return true;
+}
+
+interface ArcBolt {
+	mesh: LineSegments;
+	material: LineBasicMaterial;
+	nextStrikeAt: number;
+}
+
+function createArcBoltSystem(spotlight: typeof spotlightUniforms) {
+	const group = new Group();
+	const bolts: ArcBolt[] = [];
+
+	for (let i = 0; i < ARC_POOL_SIZE; i++) {
+		const geometry = new BufferGeometry();
+		geometry.setAttribute('position', new BufferAttribute(new Float32Array(ARC_SEGMENT_COUNT * 2 * 3), 3));
+
+		const material = new LineBasicMaterial({
+			color: ARC_HOT_COLOR,
+			transparent: true,
+			opacity: 0,
+			blending: AdditiveBlending,
+			depthWrite: false,
+		});
+
+		const mesh = new LineSegments(geometry, material);
+		mesh.visible = false;
+		group.add(mesh);
+		bolts.push({ mesh, material, nextStrikeAt: Math.random() * ARC_MAX_LIFE });
+	}
+
+	const update = (time: number, intensity: number, slices: SliceHolder[]) => {
+		const tSec = time * 0.001;
+		const spotBoost = 0.55 + spotlight.uScannerIntensity.value * 0.45;
+		const active = intensity > 0.02 && slices.length >= 2;
+
+		for (const bolt of bolts) {
+			if (!active) {
+				bolt.mesh.visible = false;
+				continue;
+			}
+
+			if (tSec >= bolt.nextStrikeAt) {
+				if (pickDischargeAnchors(slices, scratchAnchorA, scratchAnchorB)) {
+					const attr = bolt.mesh.geometry.attributes.position as BufferAttribute;
+					buildBoltPositions(scratchAnchorA, scratchAnchorB, attr.array as Float32Array);
+					attr.needsUpdate = true;
+					bolt.mesh.geometry.computeBoundingSphere();
+				}
+				bolt.nextStrikeAt = tSec + ARC_MIN_LIFE + Math.random() * (ARC_MAX_LIFE - ARC_MIN_LIFE);
+				bolt.material.color.copy(Math.random() > 0.35 ? ARC_HOT_COLOR : ARC_COOL_COLOR);
+			}
+
+			const lifeRemaining = clamp((bolt.nextStrikeAt - tSec) / ARC_MIN_LIFE);
+			bolt.material.opacity = intensity * spotBoost * (0.6 + 0.4 * Math.random()) * lifeRemaining;
+			bolt.mesh.visible = bolt.material.opacity > 0.02;
+		}
+	};
+
+	return { mesh: group, update };
+}
+
+function createSparkSystem(sparkCount = 140, spotlight: typeof spotlightUniforms) {
 	const geometry = new BufferGeometry();
-	const positions = new Float32Array(emberCount * 3);
-	const velocities = new Float32Array(emberCount * 3);
-	const lifetimes = new Float32Array(emberCount);
-	const sizes = new Float32Array(emberCount);
+	const positions = new Float32Array(sparkCount * 3);
+	const velocities = new Float32Array(sparkCount * 3);
+	const lifetimes = new Float32Array(sparkCount);
+	const sizes = new Float32Array(sparkCount);
 
-	const LIFE_DECAY = 0.055;
-	const lifeDecayJitter = new Float32Array(emberCount); 
-	const GRAVITY = 0.00022;      
-	const DRAG = 0.94;            
-	const TURBULENCE_STRENGTH = 0.003;
+	const LIFE_DECAY = 0.11; 
+	const lifeDecayJitter = new Float32Array(sparkCount);
+	const GRAVITY = 0.00045; 
+	const DRAG = 0.92;
+	const TURBULENCE_STRENGTH = 0.0035;
 
-	function resetParticle(i: number, baseY: number, topY: number, spreadX: number) {
-		const heightT = Math.pow(Math.random(), 1.5); 
-		const widthHere = spreadX * (1.0 - heightT * 0.5);
-		positions[i * 3] = (Math.random() - 0.5) * widthHere;
-		positions[i * 3 + 1] = baseY + (heightT * (topY - baseY) * 0.8);
-		positions[i * 3 + 2] = 1 + (Math.random() - 0.5) * 0.5;
+	function resetParticle(i: number, slices: SliceHolder[]) {
+		let originX = 0;
+		let originY = DISCHARGE_ORIGIN_Y;
+		let originZ = 1;
 
-		velocities[i * 3] = (Math.random() - 0.5) * 0.015;
-		velocities[i * 3 + 1] = 0.03 + (Math.random() * 0.04);
-		velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.01;
+		if (pickDischargeAnchors(slices, scratchAnchorA, scratchAnchorB)) {
+			scratchSparkSpawn.copy(scratchAnchorA).lerp(scratchAnchorB, Math.random());
+			originX = scratchSparkSpawn.x;
+			originY = scratchSparkSpawn.y;
+			originZ = scratchSparkSpawn.z + 0.3;
+		}
 
-		sizes[i] = Math.random() * 0.15 + 0.05; 
+		positions[i * 3] = originX + (Math.random() - 0.5) * 0.3;
+		positions[i * 3 + 1] = originY + (Math.random() - 0.5) * 0.15;
+		positions[i * 3 + 2] = originZ + (Math.random() - 0.5) * 0.3;
+
+		const angle = Math.random() * Math.PI * 2;
+		const speed = 0.02 + Math.random() * 0.05;
+		velocities[i * 3] = Math.cos(angle) * speed;
+		velocities[i * 3 + 1] = (Math.random() - 0.3) * 0.05;
+		velocities[i * 3 + 2] = Math.sin(angle) * speed * 0.6;
+
+		sizes[i] = Math.random() * 0.16 + 0.06;
 		lifeDecayJitter[i] = 0.8 + Math.random() * 0.4;
 		lifetimes[i] = 1.0;
 	}
 
-	for (let i = 0; i < emberCount; i++) {
-		resetParticle(i, FLAME_BASE_Y, FLAME_BASE_Y + FLAME_HALF_HEIGHT * 2, FLAME_HALF_WIDTH);
+	for (let i = 0; i < sparkCount; i++) {
+		resetParticle(i, []);
 		lifetimes[i] = Math.random();
 	}
 
@@ -413,11 +496,12 @@ function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms
 				vLife = aLife;
 				vec4 worldPos = modelMatrix * vec4(position, 1.0);
 				float d = distance(worldPos.xyz, uScannerPos);
-				vSpotMask = (1.0 - smoothstep(uScannerRadius * 0.1, uScannerRadius, d)) * uScannerIntensity;
+				float distFalloff = 1.0 - smoothstep(uScannerRadius * 0.1, uScannerRadius, d);
+				vSpotMask = mix(0.55, 1.0, uScannerIntensity) * mix(1.0, distFalloff, uScannerIntensity);
 
 				vec4 mvPosition = viewMatrix * worldPos;
-				float pointSize = aSize * 45.0 * (vLife + 0.2) * uIntensity * vSpotMask * (10.0 / -mvPosition.z);
-				gl_PointSize = min(pointSize, 60.0);
+				float pointSize = aSize * 70.0 * (vLife + 0.2) * uIntensity * vSpotMask * (10.0 / -mvPosition.z);
+				gl_PointSize = min(pointSize, 85.0);
 				gl_Position = projectionMatrix * mvPosition;
 			}
 		`,
@@ -433,9 +517,9 @@ function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms
 				float dist = length(xy);
 				if (dist > 0.5) discard;
 
-				vec3 colorHot = vec3(2.2, 1.1, 0.4);
-				vec3 colorCool = vec3(0.9, 0.15, 0.0);
-				vec3 finalColor = mix(colorCool, colorHot, smoothstep(0.0, 1.0, vLife)) * (1.0 + vSpotMask * 2.5);
+				vec3 colorHot = vec3(1.0, 2.0, 3.4);
+				vec3 colorCool = vec3(0.15, 0.4, 0.9);
+				vec3 finalColor = mix(colorCool, colorHot, smoothstep(0.0, 1.0, vLife)) * (1.0 + vSpotMask * 3.5);
 
 				float glow = smoothstep(0.5, 0.05, dist);
 				float alpha = glow * vLife * uIntensity * vSpotMask;
@@ -451,9 +535,9 @@ function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms
 
 	let lastTime: number | null = null;
 
-	const update = (time: number, intensity: number) => {
+	const update = (time: number, intensity: number, slices: SliceHolder[]) => {
 		material.uniforms.uIntensity.value = intensity;
-		if (intensity <= 0.001 || spotlight.uScannerIntensity.value <= 0.001) return; 
+		if (intensity <= 0.001) return;
 
 		const tSec = time * 0.001;
 		material.uniforms.uTime.value = tSec;
@@ -465,18 +549,12 @@ function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms
 		const lifeAttr = geometry.attributes.aLife;
 		const velAttr = geometry.attributes.aVelocity;
 
-		const windX = Math.sin(tSec * 0.15) * 0.006; 
-
-		const baseY = FLAME_BASE_Y;
-		const topY = FLAME_BASE_Y + 2 * FLAME_HALF_HEIGHT * flameScaleY(intensity);
-		const spreadX = 2 * FLAME_HALF_WIDTH * flameScaleX(intensity) * 0.7;
-
-		for (let i = 0; i < emberCount; i++) {
+		for (let i = 0; i < sparkCount; i++) {
 			let life = lifeAttr.getX(i);
 			life -= LIFE_DECAY * lifeDecayJitter[i] * dt;
 
 			if (life <= 0) {
-				resetParticle(i, baseY, topY, spreadX);
+				resetParticle(i, slices);
 				continue;
 			}
 
@@ -484,226 +562,52 @@ function createEmberSystem(emberCount = 140, spotlight: typeof spotlightUniforms
 
 			let vx = velAttr.getX(i);
 			let vy = velAttr.getY(i);
+			let vz = velAttr.getZ(i);
 
 			vy -= GRAVITY * dt;
 
 			const n = turbulence(i, posAttr.getY(i), tSec);
-			vx = vx * Math.pow(DRAG, dt) + n * TURBULENCE_STRENGTH * dt + windX * dt;
+			vx = vx * Math.pow(DRAG, dt) + n * TURBULENCE_STRENGTH * dt;
+			vz = vz * Math.pow(DRAG, dt);
 
 			velAttr.setX(i, vx);
 			velAttr.setY(i, vy);
+			velAttr.setZ(i, vz);
 
 			posAttr.setX(i, posAttr.getX(i) + vx * dt);
 			posAttr.setY(i, posAttr.getY(i) + vy * dt);
+			posAttr.setZ(i, posAttr.getZ(i) + vz * dt);
 		}
 
 		posAttr.needsUpdate = true;
 		lifeAttr.needsUpdate = true;
+		velAttr.needsUpdate = true;
 	};
 
 	return { mesh: points, update };
 }
 
-function createFlamePlane(spotlight: typeof spotlightUniforms) {
-    const uniforms = {
-        uTime: { value: 0 },
-        uIntensity: { value: 0.0 },
-        uUseCurl: { value: 1.0 },
-        uScannerPos: spotlight.uScannerPos,
-        uScannerRadius: spotlight.uScannerRadius,
-        uScannerIntensity: spotlight.uScannerIntensity
-    };
-
-	const material = new ShaderMaterial({
-		uniforms: uniforms,
-		transparent: true,
-		depthWrite: false,
-		blending: AdditiveBlending,
-		stencilWrite: true,
-		stencilRef: 1,
-		stencilFunc: EqualStencilFunc,
-		stencilFail: KeepStencilOp,
-		stencilZFail: KeepStencilOp,
-		stencilZPass: KeepStencilOp,
-		
-		vertexShader: `
-			varying vec2 vUv;
-			varying vec3 vWorldPos;
-			
-			void main() {
-				vUv = uv;
-				vec3 pos = position;
-				
-				float angle = (uv.x - 0.5) * 3.14159265; 
-				float radius = 1.8; 
-				
-				pos.x = sin(angle) * radius;
-				pos.z = (cos(angle) - 1.0) * radius; 
-				
-				vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
-				
-				gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-			}
-		`,
-
-		fragmentShader: `
-			varying vec2 vUv;
-			varying vec3 vWorldPos;
-			uniform float uTime;
-			uniform float uIntensity;
-			uniform float uUseCurl;
-			uniform vec3 uScannerPos;
-			uniform float uScannerRadius;
-			uniform float uScannerIntensity;
-
-			float hash21(vec2 p) {
-				p = fract(p * vec2(123.34, 456.21));
-				p += dot(p, p + 45.32);
-				return fract(p.x * p.y);
-			}
-
-			float noise(vec2 p) {
-				vec2 i = floor(p);
-				vec2 f = fract(p);
-				float a = hash21(i);
-				float b = hash21(i + vec2(1.0, 0.0));
-				float c = hash21(i + vec2(0.0, 1.0));
-				float d = hash21(i + vec2(1.0, 1.0));
-				vec2 u = f * f * (3.0 - 2.0 * f);
-				return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-			}
-
-			float fbm(vec2 p) {
-				float sum = 0.0;
-				float amp = 0.5;
-				for (int i = 0; i < 4; i++) {
-					sum += amp * noise(p);
-					p *= 2.02; 
-					amp *= 0.5;
-				}
-				return sum;
-			}
-
-			vec2 domainWarp(vec2 p) {
-				return vec2(fbm(p + vec2(0.0, 0.0)), fbm(p + vec2(5.2, 1.3)));
-			}
-
-			vec2 curlNoise(vec2 p) {
-				float e = 0.06;
-				float dPsiDy = (fbm(p + vec2(0.0, e)) - fbm(p - vec2(0.0, e))) / (2.0 * e);
-				float dPsiDx = (fbm(p + vec2(e, 0.0)) - fbm(p - vec2(e, 0.0))) / (2.0 * e);
-				return vec2(dPsiDy, -dPsiDx);
-			}
-
-			void main() {
-				if (uIntensity < 0.01) discard;
-
-				float spotDist = distance(vWorldPos, uScannerPos);
-				float spotMask = (1.0 - smoothstep(uScannerRadius * 0.15, uScannerRadius, spotDist)) * uScannerIntensity;
-
-				if (spotMask < 0.001) discard;
-
-				float energy = mix(0.55, 1.35, uIntensity);
-
-				vec2 p = vUv * vec2(2.2, 4.2);
-				vec2 rise = vec2(0.0, uTime * 1.1 * energy); 
-				vec2 base = p - rise;
-
-				float warped;
-				if (uUseCurl > 0.5) {
-					vec2 flow = curlNoise(base) * 0.9 * energy;
-					warped = fbm(base + flow - rise * 0.4);
-				} else {
-					vec2 offset = domainWarp(base) * 0.9 * energy;
-					warped = fbm(base + offset - rise * 0.4);
-				}
-				
-				warped = smoothstep(0.15, 0.85, warped);
-
-				float wander = fbm(vec2(vUv.y * 1.3, uTime * 0.22 + 4.0)) - 0.5;
-				float centerX = 0.5 + wander * 0.3 * vUv.y; 
-
-				float widthNoise = fbm(vec2(vUv.y * 2.1 + 9.0, uTime * 0.2));
-				float widthJitter = 0.65 + 0.6 * widthNoise;
-
-				float heightNoise = fbm(vec2(vUv.x * 2.6 + 1.0, uTime * 0.3));
-				
-				float heightReach = mix(0.42, 1.05, heightNoise) * mix(0.7, 1.15, uIntensity);
-
-				float heightEnvelope = 1.0 - smoothstep(0.08, heightReach, vUv.y);
-				
-				float halfWidthAtHeight = mix(0.6, 0.25, pow(vUv.y, 1.2)) * widthJitter;
-
-				float edgeErosion = fbm(vec2(vUv.y * 6.0, uTime * 1.5)) * 0.15;
-				float xOffset = abs(vUv.x - centerX) + edgeErosion;
-
-				float widthEnvelope = 1.0 - smoothstep(halfWidthAtHeight * 0.2, halfWidthAtHeight * 1.3, xOffset);
-				float envelope = heightEnvelope * widthEnvelope;
-
-				float lateralMask = smoothstep(0.02, 0.15, vUv.x) * smoothstep(0.98, 0.85, vUv.x);
-				float depthFade = lateralMask; 
-
-				float edgeBias = pow(1.0 - envelope, 1.4) * 1.15; 
-				float field = warped - edgeBias;
-
-				float alpha = smoothstep(0.01, 0.25, field) * uIntensity * 0.8 * depthFade * spotMask;
-
-				float flicker = 0.85 + 0.15 * fbm(vec2(uTime * 0.7, 3.1));
-				float glow = clamp(warped * envelope * flicker, 0.0, 1.0);
-
-				vec3 col = mix(vec3(0.15, 0.01, 0.0), vec3(0.85, 0.2, 0.0), smoothstep(0.05, 0.35, glow));
-				col = mix(col, vec3(1.0, 0.5, 0.05), smoothstep(0.35, 0.65, glow));
-				col = mix(col, vec3(1.2, 0.9, 0.5), smoothstep(0.65, 0.95, glow));
-
-				col *= (1.0 + spotMask * 0.8);
-
-				gl_FragColor = vec4(col, alpha);
-			}
-		`
-	});
-
-	const mesh = new Mesh(new PlaneGeometry(2.5, 4.5, 32, 1), material);
-	mesh.position.set(0, FLAME_BASE_Y + FLAME_HALF_HEIGHT, 1);
-	mesh.renderOrder = 1;
-
-	const update = (time: number, scrollIntensity: number) => {
-		material.uniforms.uIntensity.value = scrollIntensity;
-		if (scrollIntensity <= 0.001 || spotlight.uScannerIntensity.value <= 0.001) return;
-
-		const tSec = time * 0.001;
-		material.uniforms.uTime.value = tSec;
-
-		const scaleY = flameScaleY(scrollIntensity);
-		const scaleX = flameScaleX(scrollIntensity);
-		mesh.scale.set(scaleX, scaleY, 1);
-		mesh.position.y = FLAME_BASE_Y + FLAME_HALF_HEIGHT * scaleY;
-		mesh.position.x = Math.sin(tSec * 0.35) * 0.12 * scrollIntensity;
-	};
-
-	return { mesh, update };
-}
-
-function createWebGLFireSystem(emberCount = 140, spotlight: typeof spotlightUniforms) {
-	const flame = createFlamePlane(spotlight);
-	const embers = createEmberSystem(emberCount, spotlight);
+function createDischargeSystem(sparkCount = 140, spotlight: typeof spotlightUniforms) {
+	const arcs = createArcBoltSystem(spotlight);
+	const sparks = createSparkSystem(sparkCount, spotlight);
 
 	const group = new Group();
-	group.add(flame.mesh);
-	group.add(embers.mesh);
+	group.add(arcs.mesh);
+	group.add(sparks.mesh);
 
 	let smoothedIntensity = 0;
 	let lastTime: number | null = null;
 	const SMOOTH_RATE = 4.5; 
 
-	const update = (time: number, intensity: number) => {
+	const update = (time: number, intensity: number, slices: SliceHolder[]) => {
 		const dtSeconds = lastTime === null ? 0 : Math.max(0, (time - lastTime) / 1000);
 		lastTime = time;
 
 		const alpha = 1 - Math.exp(-SMOOTH_RATE * dtSeconds);
 		smoothedIntensity += (intensity - smoothedIntensity) * alpha;
 
-		flame.update(time, smoothedIntensity);
-		embers.update(time, smoothedIntensity);
+		arcs.update(time, smoothedIntensity, slices);
+		sparks.update(time, smoothedIntensity, slices);
 	};
 
 	return { mesh: group, update };
@@ -719,7 +623,7 @@ export function setupHeartScene(): LoopController | null {
 	const progressContainer = document.querySelector<HTMLElement>('.hero-progress');
 	const progressFill = document.querySelector<HTMLElement>('[data-hero-progress]');
 	const depthReadout = document.querySelector<HTMLElement>('[data-depth-readout]');
-	const labels = document.querySelectorAll<HTMLElement>('[data-dimension-label]');
+	// [data-dimension-label] elements removed — labels are now inside the slice-info panel
 	const scrollPrompt = document.querySelector<HTMLElement>('[data-scroll-prompt]');
 	const fillAortic = document.querySelector<HTMLElement>('.gel-fill--aortic');
 	const fillVentricle = document.querySelector<HTMLElement>('.gel-fill--ventricle');
@@ -761,6 +665,24 @@ export function setupHeartScene(): LoopController | null {
                 { id: 'long', type: 'meter', label: 'Cursor Long', min: -100, max: 100, majorStep: 50 },
                 { id: 'intersect', type: 'led', label: 'Target Intersection' }
             ]
+        },
+        {
+            id: 'slice-info',
+            eyebrow: 'SYS-03',
+            title: 'Tissue Analysis',
+            brand: 'HISTOLOGY',
+            model: 'HX-1',
+            labels: [
+                'Aortic Arch & Pulmonary Artery',
+                'Left & Right Atria',
+                'Mitral & Tricuspid Valves',
+                'Ventricular Chambers',
+                'Myocardial Apex',
+            ],
+            channels: [
+                { id: 'sliceName', type: 'text', label: 'Region', placeholder: 'Scanning...' },
+                { id: 'sliceText', type: 'text', label: 'Function', placeholder: 'Hover a slice to inspect tissue function.' }
+            ]
         }
     ];
     panelConfigs.forEach(c => panelManager.registerPanel(c));
@@ -771,14 +693,14 @@ export function setupHeartScene(): LoopController | null {
 	let cachedH = 0;
 
 	let audioCtx: AudioContext | null = null;
-    let fireOsc: OscillatorNode | null = null;
-    let fireGain: GainNode | null = null;
+    let arcOsc: OscillatorNode | null = null;
+    let arcGain: GainNode | null = null;
     let inkOsc: OscillatorNode | null = null;
     let inkGain: GainNode | null = null;
 
     let maxProgress = 0;
-    let decoupledFireIntensity = 0;
-    let fireActive = false;
+    let decoupledDischargeIntensity = 0;
+    let dischargeActive = false;
     let isHoveringPrevState = false;
 
 	function initSynthEngine() {
@@ -786,20 +708,20 @@ export function setupHeartScene(): LoopController | null {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         audioCtx = new AudioContextClass();
 
-        fireOsc = audioCtx.createOscillator();
-        fireGain = audioCtx.createGain();
-        const fireFilter = audioCtx.createBiquadFilter();
+        arcOsc = audioCtx.createOscillator();
+        arcGain = audioCtx.createGain();
+        const arcFilter = audioCtx.createBiquadFilter();
         
-        fireOsc.type = 'sawtooth';
-        fireOsc.frequency.setValueAtTime(45, audioCtx.currentTime); 
-        fireFilter.type = 'lowpass';
-        fireFilter.frequency.setValueAtTime(90, audioCtx.currentTime); 
+        arcOsc.type = 'square';
+        arcOsc.frequency.setValueAtTime(220, audioCtx.currentTime); 
+        arcFilter.type = 'bandpass';
+        arcFilter.frequency.setValueAtTime(1800, audioCtx.currentTime); 
 
-        fireOsc.connect(fireFilter);
-        fireFilter.connect(fireGain);
-        fireGain.connect(audioCtx.destination);
-        fireGain.gain.setValueAtTime(0, audioCtx.currentTime); 
-        fireOsc.start();
+        arcOsc.connect(arcFilter);
+        arcFilter.connect(arcGain);
+        arcGain.connect(audioCtx.destination);
+        arcGain.gain.setValueAtTime(0, audioCtx.currentTime); 
+        arcOsc.start();
 
         inkOsc = audioCtx.createOscillator();
         inkGain = audioCtx.createGain();
@@ -834,7 +756,7 @@ export function setupHeartScene(): LoopController | null {
 			});
 		}
 	}
-
+	
 	updateBorderLength();
 
 	if (!section || !canvas) {
@@ -859,9 +781,22 @@ export function setupHeartScene(): LoopController | null {
         targetX: 0,
         targetY: 0
     };
+
+    // Slice Modal State Tracker — shrink/expand with 1s dwell
+    const modalState = {
+        displayIndex: -1,       // confirmed slice (content currently shown)
+        pendingIndex: -1,       // slice being hovered (before dwell confirms)
+        dwellTimer: 0,          // seconds continuously hovering pendingIndex
+        scaleY: 0,              // animated detail height fraction (0=collapsed, 1=expanded)
+        targetScaleY: 0,        // lerp target for scaleY
+        phase: 'collapsed' as 'collapsed' | 'collapsing' | 'expanding',
+        panelOpacity: 0,        // overall panel fade (0 before dissection, 1 after)
+        lastTime: 0,
+    };
     
     let isIntersecting = false;
     let isVisible = false;
+    let hoveredSliceIndex = -1;
 
     const handleMouseMove = (e: MouseEvent) => {
         mouse.targetX = (e.clientX / window.innerWidth) * 2 - 1;
@@ -872,7 +807,8 @@ export function setupHeartScene(): LoopController | null {
     const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
     const heartRaycaster = new Raycaster();
     const heartPointerNdc = new Vector2();
-    const scratchLabelPos = new Vector3(); // reused every frame in the labels loop below
+    // scratchLabelPos removed — floating labels are now inside the panel
+    const scratchHeartCenter = new Vector3(); // reused each frame for heart projection
 
 	const scene = new Scene();
 	scene.fog = new FogExp2(0x020308, 0.035);
@@ -963,8 +899,9 @@ export function setupHeartScene(): LoopController | null {
             float edge = smoothstep(threshold - 0.2, threshold + 0.2, fluid);
             float distortion = (1.0 - edge) * edge * 4.0; 
             
-            vec2 rOffset = vec2(0.015, 0.0) * distortion * fluid;
-            vec2 bOffset = vec2(-0.015, 0.0) * distortion * fluid;
+            float aberrationAmount = clamp(fluid, 0.0, 1.0) * distortion;
+            vec2 rOffset = vec2(0.015, 0.0) * aberrationAmount;
+            vec2 bOffset = vec2(-0.015, 0.0) * aberrationAmount;
             
             float rCol = texture2D(tDiffuse, vUv + rOffset).r;
             float gCol = texture2D(tDiffuse, vUv).g;
@@ -988,8 +925,8 @@ export function setupHeartScene(): LoopController | null {
 	composer.addPass(bloomPass);
 	composer.addPass(inkPass);
 
-	const fireSystem = createWebGLFireSystem(140, spotlightUniforms); 
-	scene.add(fireSystem.mesh);
+	const dischargeSystem = createDischargeSystem(180, spotlightUniforms); 
+	scene.add(dischargeSystem.mesh);
 
 	const heartGroup = new Group();
 	scene.add(heartGroup);
@@ -1061,31 +998,28 @@ export function setupHeartScene(): LoopController | null {
 	let slices: SliceHolder[] = [];
 	let solidMeshes: Mesh[] = []; 
 
-	const loader = new GLTFLoader();
-	loader.setMeshoptDecoder(MeshoptDecoder);
+	loadHeartGeometry('/heart-meshopt.glb', SLICE_COUNT, heartGroup, async (result) => {
+		slices = result.slices;
+		solidMeshes = result.solids;
+		
+		// Chunk 1: Grid
+		heartGroup.visible = false;
+		dischargeSystem.mesh.visible = false;
+		renderer.compile(scene, camera);
+		await new Promise(r => setTimeout(r, 20));
+		
+		// Chunk 2: Discharge
+		dischargeSystem.mesh.visible = true;
+		renderer.compile(scene, camera);
+		await new Promise(r => setTimeout(r, 20));
+		
+		// Chunk 3: Heart Slices
+		heartGroup.visible = true;
+		renderer.compile(scene, camera);
+		await new Promise(r => setTimeout(r, 20));
 
-	loader.load(
-		'/heart-meshopt.glb',
-		(gltf) => {
-			runWorkerSlicing(mergeModelGeometry(gltf.scene), heartGroup, (result) => {
-				slices = result.slices;
-				solidMeshes = result.solids;
-				renderer.compile(scene, camera);
-				markReady('heart');
-			});
-		},
-		undefined,
-		() => {
-			const fallback = new SphereGeometry(1.2, 64, 32).toNonIndexed();
-			fallback.scale(0.82, 1.16, 0.72);
-			runWorkerSlicing([fallback], heartGroup, (result) => {
-				slices = result.slices;
-				solidMeshes = result.solids;
-				renderer.compile(scene, camera);
-				markReady('heart');
-			});
-		},
-	);
+		markReady('heart');
+	});
 	
 	function applyDOMScrollState(state: ScrollState): void {
         const { progress, heartFade, hudProgress, terminalProgress } = state;
@@ -1215,16 +1149,16 @@ export function setupHeartScene(): LoopController | null {
 
         const { rotateHorizontal, rotateVertical, dissectionProgress, heartFade, inkProgress, progress } = state;
 
-		if (dissectionProgress >= 0.999 && currentProgress <= TIMELINE.fireOut.start) {
-            fireActive = true;
+		if (dissectionProgress >= 0.999 && currentProgress <= TIMELINE.dischargeOut.start) {
+            dischargeActive = true;
         } else {
-            fireActive = false;
+            dischargeActive = false;
         }
 
         if (scrollVelocity > 0.02) {
-            decoupledFireIntensity = fireActive ? 1.0 : 0.0;
+            decoupledDischargeIntensity = dischargeActive ? 1.0 : 0.0;
         } else {
-            decoupledFireIntensity = lerp(decoupledFireIntensity, fireActive ? 1.0 : 0.0, 0.08);
+            decoupledDischargeIntensity = lerp(decoupledDischargeIntensity, dischargeActive ? 1.0 : 0.0, 0.08);
         }
 
         const timeSec = time * 0.001;
@@ -1266,10 +1200,7 @@ export function setupHeartScene(): LoopController | null {
         camera.lookAt(0, 0, 0);
         camera.updateMatrixWorld();
 
-        // Was smoothstep(0.40, 0.72, progress) — an independent window that finished ramping
-        // before the slices (TIMELINE.dissection: 0.62–0.80) had visibly separated. Keying off
-        // dissectionProgress locks the color change to the same clock as the mechanical reveal.
-        const lightPhase = dissectionProgress * (1 - smoothstep(0.92, 0.98, progress));
+        const lightPhase = dissectionProgress;
         
         slices.forEach((slice, i) => {
             const direction = slice.userData.direction ?? i - 2;
@@ -1298,10 +1229,6 @@ export function setupHeartScene(): LoopController | null {
             const delay = order * 0.16;
             const sliceLight = clamp((lightPhase - delay) / 0.32);
 
-            // Continuous cool -> hot emissive transition (was a hard if/else that snapped the
-            // color instantly at sliceLight > 0.05, and pushed intensity to 6.5 which blew the
-            // G/B channels past the ACES tonemap ceiling before R caught up — read as a flat
-            // clipped blue instead of a graded hot glow).
             materials.solid.emissive.lerpColors(EMISSIVE_COOL, EMISSIVE_HOT, sliceLight);
             materials.solid.emissiveIntensity = lerp(0.2, EMISSIVE_PEAK_INTENSITY, sliceLight);
             
@@ -1321,6 +1248,9 @@ export function setupHeartScene(): LoopController | null {
             
             if (isIntersecting && isVisible) {
                 spotlightConfig.targetPos.copy(intersects[0].point);
+                hoveredSliceIndex = solidMeshes.indexOf(intersects[0].object as Mesh);
+            } else {
+                hoveredSliceIndex = -1;
             }
             
             if (isHoveringPrevState !== isIntersecting) {
@@ -1333,9 +1263,11 @@ export function setupHeartScene(): LoopController | null {
             spotlightConfig.targetIntensity = (isIntersecting && isVisible) ? 1.0 : 0.0;
         } else {
             setHoverTarget('heart', false);
+            hoveredSliceIndex = -1;
         }
 
-        const panelVisibility = (currentProgress >= 0.02 && currentProgress <= 0.60) ? 1.0 : 0.0;
+        // Smoothstep crossfade: pre-dissection panels fade out over 0.52–0.62
+        const panelVisibility = smoothstep(0.62, 0.52, currentProgress) * smoothstep(0.01, 0.04, currentProgress);
 
         const SCALE = 0.40;
         const PANEL_BASE_WIDTH = 530; 
@@ -1385,55 +1317,118 @@ export function setupHeartScene(): LoopController | null {
             }
         });
 
-		// Snappier, high-precision spotlight tracking
+        // -----------------------------------------------------------------------
+        // Tissue Analysis Modal — Shrink/Expand with 1s Dwell
+        // -----------------------------------------------------------------------
+        const dtSeconds = modalState.lastTime === 0 ? 0 : (time - modalState.lastTime) / 1000;
+        modalState.lastTime = time;
+
+        // Panel fades in as pre-dissection panels fade out (crossfade over 0.55–0.65)
+        const targetPanelOpacity = smoothstep(0.55, 0.65, currentProgress) * smoothstep(0.90, 0.82, currentProgress);
+        modalState.panelOpacity = lerp(modalState.panelOpacity, targetPanelOpacity, 0.08);
+
+        // --- Dwell tracking ---
+        const isDissected = currentProgress > 0.58;
+        if (isDissected && hoveredSliceIndex >= 0) {
+            if (hoveredSliceIndex !== modalState.pendingIndex) {
+                // New slice — reset dwell, start collapsing if detail is open
+                modalState.pendingIndex = hoveredSliceIndex;
+                modalState.dwellTimer = 0;
+                if (modalState.displayIndex >= 0 && modalState.scaleY > 0.01) {
+                    modalState.phase = 'collapsing';
+                }
+            } else {
+                modalState.dwellTimer += dtSeconds;
+            }
+        } else {
+            // Nothing hovered — collapse and clear
+            modalState.pendingIndex = -1;
+            modalState.dwellTimer = 0;
+            if (modalState.displayIndex >= 0 && modalState.scaleY > 0.01) {
+                modalState.phase = 'collapsing';
+            }
+        }
+
+        // --- State machine for detail section scaleY ---
+        if (modalState.phase === 'collapsing') {
+            modalState.targetScaleY = 0;
+            if (modalState.scaleY < 0.02) {
+                modalState.scaleY = 0;
+                if (modalState.pendingIndex >= 0 && modalState.dwellTimer >= 1.0) {
+                    modalState.displayIndex = modalState.pendingIndex;
+                    modalState.phase = 'expanding';
+                } else if (modalState.pendingIndex < 0) {
+                    modalState.displayIndex = -1;
+                    modalState.phase = 'collapsed';
+                }
+                // else: stay collapsed, waiting for dwell to satisfy
+            }
+        }
+
+        if (modalState.phase === 'expanding') {
+            modalState.targetScaleY = 1.0;
+            if (modalState.scaleY > 0.98) {
+                modalState.scaleY = 1.0; // snap
+            }
+        }
+
+        // From collapsed, if dwell is satisfied, begin expanding
+        if (modalState.phase === 'collapsed' && modalState.pendingIndex >= 0 && modalState.dwellTimer >= 1.0) {
+            modalState.displayIndex = modalState.pendingIndex;
+            modalState.phase = 'expanding';
+        }
+
+        modalState.scaleY = lerp(modalState.scaleY, modalState.targetScaleY, 0.12);
+
+        // --- Position to the left of the heart with viewport clamping ---
+        // The panel renders at scale(var(--panel-scale, 0.80)), so use 0.80
+        // for sizing calculations.
+        const RENDER_SCALE = 0.80;
+        const MODAL_EST_HEIGHT = 420;
+        const MODAL_MARGIN = 24;
+        const HEART_GAP = 400; // px gap between panel right edge and heart left edge
+        const modalWidth = PANEL_BASE_WIDTH * RENDER_SCALE;
+        const modalHeight = MODAL_EST_HEIGHT * RENDER_SCALE;
+
+        // Project heart center to screen coordinates
+        heartGroup.getWorldPosition(scratchHeartCenter);
+        scratchHeartCenter.project(camera);
+        const heartScreenX = (scratchHeartCenter.x * 0.5 + 0.5) * window.innerWidth;
+        const heartScreenY = -(scratchHeartCenter.y * 0.5 - 0.5) * window.innerHeight;
+
+        // Place panel to the left of the heart, vertically centered
+        let fixedX = heartScreenX - modalWidth - HEART_GAP;
+        let fixedY = heartScreenY - modalHeight * 0.4;
+
+        // Clamp to viewport bounds
+        fixedX = Math.max(MODAL_MARGIN, Math.min(fixedX, window.innerWidth - modalWidth - MODAL_MARGIN));
+        fixedY = Math.max(MODAL_MARGIN, Math.min(fixedY, window.innerHeight - modalHeight - MODAL_MARGIN));
+
+        panelManager.update('slice-info', {
+            x: fixedX,
+            y: fixedY,
+            opacity: modalState.panelOpacity,
+            scaleY: modalState.scaleY,
+            activeLabel: modalState.pendingIndex >= 0 ? (SLICE_COUNT - 1) - modalState.pendingIndex : -1,
+            values: {
+                sliceName: modalState.displayIndex >= 0 ? SLICE_NAMES[modalState.displayIndex] : '',
+                sliceText: modalState.displayIndex >= 0 ? SLICE_DESCRIPTIONS[modalState.displayIndex] : ''
+            }
+        });
+
 		spotlightConfig.intensity = lerp(spotlightConfig.intensity, spotlightConfig.targetIntensity, 0.35);
 		if (spotlightConfig.intensity > 0.001) {
-			spotlightConfig.pos.lerp(spotlightConfig.targetPos, 0.45); // Very fast follow
+			spotlightConfig.pos.lerp(spotlightConfig.targetPos, 0.45);
 		}
 		
 		spotlightUniforms.uScannerPos.value.copy(spotlightConfig.pos);
 		spotlightUniforms.uScannerIntensity.value = spotlightConfig.intensity;
 		spotlightPointLight.position.copy(spotlightConfig.pos);
-		spotlightPointLight.intensity = spotlightConfig.intensity * 25.0; // Lowered from 52 so it doesn't clip
+		spotlightPointLight.intensity = spotlightConfig.intensity * 25.0; 
 		
-        labels.forEach((label, i) => {
-            const targetSlice = slices[(SLICE_COUNT - 1) - i];
-            if (!targetSlice) return;
+        // Floating labels removed — they are now integrated into the slice-info panel
 
-            const isRightSide = i % 2 === 0;
-            const staggerStart = i * 0.08;
-            const fadeIn = smoothstep(staggerStart, staggerStart + 0.15, dissectionProgress);
-            const fadeOut = smoothstep(0.85, 0.75, progress); 
-            const visibility = fadeIn * fadeOut;
-
-            if (visibility < 0.001) {
-                label.style.opacity = '0';
-                label.style.pointerEvents = 'none';
-                return;
-            }
-
-            const slicePos = scratchLabelPos;
-            targetSlice.getWorldPosition(slicePos);
-            slicePos.x += isRightSide ? 1.8 : -1.8; 
-            slicePos.y += 0.2;  
-
-            slicePos.project(camera);
-            const x = (slicePos.x * 0.5 + 0.5) * window.innerWidth;
-            const y = -(slicePos.y * 0.5 - 0.5) * window.innerHeight;
-
-            const slideX = lerp(isRightSide ? -40 : 40, 0, visibility); 
-            const blur = lerp(8, 0, visibility);     
-
-            label.style.opacity = String(visibility);
-            label.style.filter = `blur(${blur}px)`;
-            label.style.pointerEvents = visibility > 0.5 ? 'auto' : 'none';
-            label.style.textAlign = isRightSide ? 'left' : 'right';
-            
-            const alignOffset = isRightSide ? '0%' : '-100%';
-            label.style.transform = `translate3d(calc(${x + slideX}px + ${alignOffset}), calc(${y}px - 50%), 0)`;
-        });
-
-		fireSystem.update(time, decoupledFireIntensity);
+		dischargeSystem.update(time, decoupledDischargeIntensity, slices);
 
         inkPass.uniforms.uTime.value = time * 0.001;
         inkPass.uniforms.uProgress.value = smoothstep(0.0, 1.0, inkProgress);
@@ -1448,7 +1443,10 @@ export function setupHeartScene(): LoopController | null {
 	window.addEventListener('scroll', calculateTargetProgress, { passive: true });
 	window.addEventListener('resize', handleResize);
 	
-	handleResize();
+	// Defer the initial layout read so it doesn't block FCP
+	requestAnimationFrame(() => {
+		handleResize();
+	});
 
 	return {
 		...controller,
@@ -1476,10 +1474,10 @@ export function setupHeartScene(): LoopController | null {
 			inkPass.dispose?.();
 			composer.dispose();
 
-			fireOsc?.stop();
+			arcOsc?.stop();
 			inkOsc?.stop();
-			fireOsc?.disconnect();
-			fireGain?.disconnect();
+			arcOsc?.disconnect();
+			arcGain?.disconnect();
 			inkOsc?.disconnect();
 			inkGain?.disconnect();
 			audioCtx?.close();

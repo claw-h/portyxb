@@ -30,9 +30,10 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { createLoopController } from '../utils/canvas';
+import { markReady } from '../utils/loadState';
 import { clamp, lerp, smoothstep } from '../utils/math';
 import type { LoopController } from '../utils/canvas';
-import { markReady } from '../utils/loadState.ts';
+
 import { setHoverTarget } from '../utils/hoverTargets';
  
 // ---------------------------------------------------------------------------
@@ -635,7 +636,6 @@ export function setupDreamCanvas(): LoopController | null {
 	const section = document.querySelector<HTMLElement>('[data-canvas-zone="dream"]');
 	const outputCanvas = document.querySelector<HTMLCanvasElement>('[data-dream-canvas]');
 	if (!section || !outputCanvas) {
-		markReady('dream');
 		return null;
 	}
 	const sectionEl = section;
@@ -651,7 +651,6 @@ export function setupDreamCanvas(): LoopController | null {
 	// 1. Build the scene instantly, but keep it dormant
 	const initHeavyLifting = async () => {
 	if (isDestroyed) {
-		markReady('dream');
 		return;
 	}
 	
@@ -673,7 +672,6 @@ export function setupDreamCanvas(): LoopController | null {
 	
 	const bctx = bufferCanvas.getContext('2d');
 	if (!bctx) {
-		markReady('dream');
 		return;
 	}
 
@@ -689,6 +687,7 @@ export function setupDreamCanvas(): LoopController | null {
 	const { mat: crtMaterial, geo: crtGeometry } = buildCRTBackground(scene);
 
 	const baseGeometry = await loadDreamGeometry();
+
 	const { masterGroup, instances, wireUniforms, updateEdgeNulls } = buildStaircaseTriptych(scene, baseGeometry, camera);
 
 	const initialWidth = Math.floor(outputCanvas.clientWidth);
@@ -732,7 +731,7 @@ export function setupDreamCanvas(): LoopController | null {
 	let lastHeight = initialHeight;
 	let frameNeedsGlyphRedraw = true;
 
-	let canvasWasDrawn = false; // <-- ADD THIS LINE HERE!
+	let canvasWasDrawn = false;
 
 	function applyResize(width: number, height: number): void {
 		const rdpr = Math.min(window.devicePixelRatio, 2);
@@ -777,7 +776,7 @@ export function setupDreamCanvas(): LoopController | null {
 
 	renderer.compile(scene, camera);
 	composer.render();
-	markReady('dream');
+
 
 	const hasFinePointer = window.matchMedia('(pointer: fine)').matches;
 	const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;

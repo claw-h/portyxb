@@ -104,9 +104,17 @@ interface InternalRef {
 export class InstrumentPanel {
     public readonly id: string;
     private config: PanelConfig;
-    private current: Map<number, number | boolean> = new Map();
+    private current: Map<number, any> = new Map();
+    private _lastTransform = '';
+    private _lastOpacity = '';
     private refs: InternalRef[] = [];
     public root: HTMLElement;
+
+    // Label list + collapsible detail section support
+    private labelRows: HTMLElement[] = [];
+    private detailSection: HTMLElement | null = null;
+    private _detailHeight = 0;
+    private _lastActiveLabel = -2;
 
     constructor(config: PanelConfig) {
         this.id = config.id;
@@ -120,32 +128,16 @@ export class InstrumentPanel {
 
     // Driven by PanelManager's single centralized, rAF-throttled listener —
     // this panel no longer owns a window listener itself.
-    public updateLightPosition(clientX: number, clientY: number) {
-        if (!this.panelEl) return;
 
-        const rect = this.panelEl.getBoundingClientRect();
-
-        // Skip the write entirely if the cursor is nowhere near this panel
-        // (cheap early-out before touching style so far-off panels do no work).
-        const margin = 200;
-        if (
-            clientX < rect.left - margin ||
-            clientX > rect.right + margin ||
-            clientY < rect.top - margin ||
-            clientY > rect.bottom + margin
-        ) {
-            return;
-        }
-
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-
-        this.panelEl.style.setProperty('--light-x', `${x}px`);
-        this.panelEl.style.setProperty('--light-y', `${y}px`);
-    }
 
     public mount(parent: HTMLElement) {
         parent.appendChild(this.root);
+        // Measure the detail section's natural height while the panel is still
+        // invisible (PanelManager calls hide() right after mount), then collapse it.
+        if (this.detailSection) {
+            this._detailHeight = this.detailSection.scrollHeight;
+            this.detailSection.style.height = '0px';
+        }
     }
 
     private _build(config: PanelConfig): HTMLElement {
@@ -175,10 +167,34 @@ export class InstrumentPanel {
         const meters = config.channels.filter(c => c.type === 'meter');
         const mids = config.channels.filter(c => c.type === 'knob' || c.type === 'digital');
         const switches = config.channels.filter(c => c.type === 'toggle' || c.type === 'led');
+        const texts = config.channels.filter(c => c.type === 'text');
 
         if (meters.length) faceplate.appendChild(this._row(meters));
         if (mids.length) faceplate.appendChild(this._row(mids));
         if (switches.length) faceplate.appendChild(this._row(switches));
+
+        // Build integrated label list if the config provides one
+        if (config.labels && config.labels.length > 0) {
+            const labelList = document.createElement('div');
+            labelList.className = 'panel__label-list';
+            config.labels.forEach((text, i) => {
+                const row = document.createElement('div');
+                row.className = 'panel__label-row';
+                row.innerHTML = `<span class="panel__label-num">${String(i + 1).padStart(2, '0')}</span><span class="panel__label-name">${text}</span>`;
+                labelList.appendChild(row);
+                this.labelRows.push(row);
+            });
+            faceplate.appendChild(labelList);
+        }
+
+        // Wrap text channels in a collapsible detail section so they can
+        // shrink/expand independently of the label list above them.
+        if (texts.length > 0) {
+            this.detailSection = document.createElement('div');
+            this.detailSection.className = 'panel__detail-section';
+            texts.forEach((c) => this.detailSection!.appendChild(this._channel(c)));
+            faceplate.appendChild(this.detailSection);
+        }
 
         const footer = document.createElement('div');
         footer.className = 'panel__footer';
@@ -207,6 +223,7 @@ export class InstrumentPanel {
             case 'digital': return this._digital(channel);
             case 'toggle': return this._toggle(channel);
             case 'led': return this._led(channel);
+            case 'text': return this._text(channel);
             default:
                 // Fallback for exhaustive checking
                 const el = document.createElement('div');
@@ -296,17 +313,35 @@ export class InstrumentPanel {
         return wrap;
     }
 
+    private _text(channel: Extract<ChannelConfig, { type: 'text' }>): HTMLElement {
+        const wrap = document.createElement('div');
+        wrap.className = 'channel channel--text';
+        wrap.innerHTML = `
+      <div class="text__label">${channel.label}</div>
+      <div class="text__screen"><span class="text__value" data-value>${channel.placeholder ?? ''}</span></div>
+    `;
+        const valueEl = wrap.querySelector('[data-value]') as HTMLElement;
+        this.refs.push({ channel, type: 'text', valueEl });
+        return wrap;
+    }
+
     // =====================================================================
     // Public API Methods
     // =====================================================================
 
-// Inside InstrumentPanel.ts
     public setPosition(x: number, y: number, z: number, rotationY: number) {
-        // Assuming your root element is this.el
-this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotationY}deg) scale(var(--panel-scale, 0.80))`;    }
+        if (this._lastOpacity === '0') return; // Bypass invisible updates
+        const transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotationY}deg) scale(var(--panel-scale, 0.70))`;
+        if (this._lastTransform === transform) return;
+        this._lastTransform = transform;
+        this.root.style.transform = transform;
+    }
 
     public setOpacity(opacity: number) {
-        this.root.style.opacity = String(opacity);
+        const opStr = String(opacity);
+        if (this._lastOpacity === opStr) return;
+        this._lastOpacity = opStr;
+        this.root.style.opacity = opStr;
         this.root.style.pointerEvents = opacity > 0.1 ? 'auto' : 'none';
     }
 
@@ -318,6 +353,38 @@ this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotat
         this.setOpacity(0);
     }
 
+    /**
+     * Highlights the label row at the given index and dims all others.
+     * Pass -1 to deactivate all rows.
+     */
+    public setActiveLabel(index: number) {
+        if (index === this._lastActiveLabel) return;
+        this._lastActiveLabel = index;
+        this.labelRows.forEach((row, i) => {
+            row.classList.toggle('is-active', i === index);
+        });
+    }
+
+    /**
+     * Animates the detail section's height as a fraction of its natural height.
+     * 0 = fully collapsed, 1 = fully expanded.
+     */
+    public setDetailScale(scaleY: number) {
+        if (!this.detailSection) return;
+
+        if (scaleY >= 0.99) {
+            // Fully expanded — let content flow naturally and refresh the cache
+            this.detailSection.style.height = '';
+            this._detailHeight = this.detailSection.scrollHeight;
+        } else if (scaleY <= 0.01) {
+            this.detailSection.style.height = '0px';
+        } else {
+            // Mid-animation — interpolate from cached natural height
+            if (this._detailHeight === 0) this._detailHeight = 200; // fallback
+            this.detailSection.style.height = `${this._detailHeight * scaleY}px`;
+        }
+    }
+
     public update(values: TelemetryData) {
         this.refs.forEach((ref, i) => {
             const raw = values[ref.channel.id];
@@ -327,6 +394,7 @@ this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotat
                 const config = ref.channel as Extract<ChannelConfig, { type: 'meter' }>;
                 const { min, max } = config;
                 const prev = this.current.has(i) ? (this.current.get(i) as number) : (raw as number);
+                if (Math.abs(prev - (raw as number)) < 0.001) return;
                 const next = lerp(prev, raw as number, 0.14);
                 this.current.set(i, next);
                 const t = clamp01((next - min) / (max - min));
@@ -338,26 +406,67 @@ this.root.style.transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotat
                 const config = ref.channel as Extract<ChannelConfig, { type: 'knob' }>;
                 const { min, max, format } = config;
                 const prev = this.current.has(i) ? (this.current.get(i) as number) : (raw as number);
+                if (Math.abs(prev - (raw as number)) < 0.001) return;
                 const next = lerp(prev, raw as number, 0.2);
                 this.current.set(i, next);
                 const t = clamp01((next - min) / (max - min));
                 const angle = lerp(-135, 135, t);
                 if (ref.pointer) ref.pointer.style.transform = `translate(-50%,0) rotate(${angle}deg)`;
-                if (ref.valueEl) ref.valueEl.textContent = format ? format(next) : String(Math.round(next));
+                
+                const newText = format ? format(next) : String(Math.round(next));
+                if (ref.valueEl && ref.valueEl.textContent !== newText) ref.valueEl.textContent = newText;
             } else if (ref.type === 'digital') {
                 const config = ref.channel as Extract<ChannelConfig, { type: 'digital' }>;
-                if (ref.valueEl) ref.valueEl.textContent = config.format ? config.format(raw as number) : String(raw);
+                const newText = config.format ? config.format(raw as number) : String(raw);
+                if (ref.valueEl && ref.valueEl.textContent !== newText) ref.valueEl.textContent = newText;
             } else if (ref.type === 'toggle') {
-                if (ref.toggleEl) ref.toggleEl.classList.toggle('is-on', !!raw);
+                const isOp = !!raw;
+                if (this.current.get(i) === isOp) return;
+                this.current.set(i, isOp);
+                if (ref.toggleEl) ref.toggleEl.classList.toggle('is-on', isOp);
             } else if (ref.type === 'led') {
-                if (ref.ledEl) ref.ledEl.classList.toggle('is-on', !!raw);
+                const isOp = !!raw;
+                if (this.current.get(i) === isOp) return;
+                this.current.set(i, isOp);
+                if (ref.ledEl) ref.ledEl.classList.toggle('is-on', isOp);
+            } else if (ref.type === 'text') {
+                const newText = String(raw);
+                if (ref.valueEl && ref.valueEl.textContent !== newText) ref.valueEl.textContent = newText;
             }
         });
+    }
+
+    // Completely decoupled from the panel's internal RAF — 
+    // this panel no longer owns a window listener itself.
+    public updateLightPosition(clientX: number, clientY: number) {
+        if (!this.panelEl) return;
+
+        const rect = this.panelEl.getBoundingClientRect();
+
+        // Skip the write entirely if the cursor is nowhere near this panel
+        // (cheap early-out before touching style so far-off panels do no work).
+        const margin = 200;
+        if (
+            clientX < rect.left - margin ||
+            clientX > rect.right + margin ||
+            clientY < rect.top - margin ||
+            clientY > rect.bottom + margin
+        ) {
+            return;
+        }
+
+        const x = clientX - rect.left;
+        const y = clientY - rect.top;
+
+        this.panelEl.style.setProperty('--light-x', `${x}px`);
+        this.panelEl.style.setProperty('--light-y', `${y}px`);
     }
 
     public destroy() {
         this.root.remove();
         this.refs = [];
         this.current.clear();
+        this.labelRows = [];
+        this.detailSection = null;
     }
 }
