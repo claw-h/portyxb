@@ -137,13 +137,24 @@ import '../styles/ui.css';
 		</section>
 
 
-		<nav class="phase-nav">
+
+		<!-- DEV NAVIGATION HOTKEY (Press 'N' to toggle) - Delete this block for prod -->
+		<script>
+			document.addEventListener('keydown', (e) => {
+				if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) {
+					const nav = document.querySelector('.phase-nav');
+					if (nav) nav.style.display = nav.style.display === 'none' ? 'flex' : 'none';
+				}
+			});
+		</script>
+		<nav class="phase-nav" style="display: none;">
 			<a href="#phase-1" class="phase-link" data-title="Heart">#1</a>
 			<a href="#phase-2" class="phase-link" data-title="Text">#2</a>
 			<a href="#phase-3" class="phase-link" data-title="Staircase">#3</a>
 			<a href="#phase-4" class="phase-link" data-title="Biome">#4</a>
 			<a href="#phase-5" class="phase-link" data-title="TV">#5</a>
 		</nav>
+		<!-- END DEV NAVIGATION -->
 
 	</main>
 </Layout>
