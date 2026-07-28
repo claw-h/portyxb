@@ -62,6 +62,7 @@ export interface PanelConfig {
     channels: ChannelConfig[];
     /** Optional label list rendered between the header and channels (e.g. slice names). */
     labels?: string[];
+    collapsible?: boolean;
 }
 
 export type TelemetryData = Record<string, number | boolean | string>;

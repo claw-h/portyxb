@@ -11,6 +11,11 @@ export interface PanelUpdatePayload {
     opacity?: number;
     scaleY?: number;          // Detail section height fraction (0–1)
     activeLabel?: number;     // Which label row to highlight (-1 = none)
+    title?: string;
+    titleState0?: string;
+    titleState1?: string;
+    titleProgress?: number; // 0 to 1
+    eyebrow?: string;
     values?: TelemetryData;
 }
 
@@ -87,6 +92,16 @@ export class PanelManager {
 
         if (payload.activeLabel !== undefined) {
             panel.setActiveLabel(payload.activeLabel);
+        }
+
+        if (payload.title !== undefined) {
+            panel.setTitle(payload.title);
+        } else if (payload.titleState0 !== undefined && payload.titleState1 !== undefined && payload.titleProgress !== undefined) {
+            panel.setTitleTransition(payload.titleState0, payload.titleState1, payload.titleProgress);
+        }
+
+        if (payload.eyebrow !== undefined) {
+            panel.setEyebrow(payload.eyebrow);
         }
 
         if (payload.values) {

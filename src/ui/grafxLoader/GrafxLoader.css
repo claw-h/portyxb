@@ -1,0 +1,299 @@
+/* src/ui/grafxLoader/GrafxLoader.css */
+
+:root {
+  --grafx-chassis-0: #05070a;
+  --grafx-chassis-1: #11161f;
+  --grafx-chassis-2: #1c2531;
+  --grafx-chassis-edge: #3a4656;
+  --grafx-accent-cyan: #7fd4ff;
+  --grafx-text-hud: #cfe8ff;
+  --grafx-text-dim: #6d7d90;
+  --grafx-label-font: 'Oswald', sans-serif;
+  --grafx-mono-font: 'JetBrains Mono', monospace;
+}
+
+/* ---------------------------------------------------------------- */
+/* OS Container & CRT Boot Sequence                                 */
+/* ---------------------------------------------------------------- */
+
+.grafx-shell {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.55); /* Scaled down to physically fit inside the TV mesh bounds */
+  transform-origin: center center;
+  width: min(680px, 95vw);
+  max-height: 80vh;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* Only enable when TV is fully assembled/booted */
+  opacity: 0; /* Hidden until triggered */
+}
+
+.grafx-shell.is-booting {
+  pointer-events: auto;
+  opacity: 0.92; /* Slightly see-through for a projected look without breaking contrast */
+}
+
+.grafx-crt {
+  width: 100%;
+  position: relative;
+  background: 
+    linear-gradient(180deg, rgba(255,255,255,0.03) 0%, transparent 100%),
+    linear-gradient(90deg, #0d121a 0%, var(--grafx-chassis-2) 12px, var(--grafx-chassis-1) 50%, var(--grafx-chassis-0) 100%);
+  border-radius: 6px;
+  padding: 24px 28px;
+  box-shadow:
+    0 40px 90px -20px rgba(0, 0, 0, 0.95),
+    0 15px 30px -10px rgba(0, 0, 0, 0.8),
+    inset 0 2px 3px rgba(255,255,255,0.1),
+    inset 0 -4px 12px rgba(0,0,0,0.8),
+    0 0 0 1px #040609,
+    0 0 0 4px #121821,
+    0 0 0 5px var(--grafx-chassis-edge);
+  
+  font-family: var(--grafx-label-font);
+  color: var(--grafx-text-hud);
+  overflow: hidden;
+  transform: scale(1, 0.002);
+  filter: brightness(10) contrast(2);
+  opacity: 0;
+}
+
+.grafx-shell.is-booting .grafx-crt {
+  animation: os-crt-turn-on 0.6s cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  /* Slight delay so TV meshes can assemble first */
+  animation-delay: 0.2s;
+}
+
+@keyframes os-crt-turn-on {
+  0% { 
+    transform: scale(1, 0.002); 
+    opacity: 0; 
+    filter: brightness(10) contrast(2); 
+  }
+  5% { 
+    transform: scale(1, 0.002); 
+    opacity: 1; 
+    filter: brightness(10) contrast(2); 
+  }
+  55% { 
+    transform: scale(1, 0.002); 
+    opacity: 1; 
+    filter: brightness(10) contrast(2); 
+  }
+  100% { 
+    transform: scale(1, 1); 
+    opacity: 1; 
+    filter: brightness(1) contrast(1); 
+  }
+}
+
+/* ---------------------------------------------------------------- */
+/* UI Header                                                        */
+/* ---------------------------------------------------------------- */
+
+.grafx-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid #000000;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.grafx-title {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--grafx-text-hud);
+}
+
+.grafx-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.grafx-btn {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  background: rgba(127, 212, 255, 0.3);
+  border: 1px solid rgba(127, 212, 255, 0.4);
+}
+
+.grafx-btn--close {
+  background: rgba(255, 68, 51, 0.3);
+  border-color: rgba(255, 68, 51, 0.4);
+}
+
+/* ---------------------------------------------------------------- */
+/* Tabs Navigation                                                  */
+/* ---------------------------------------------------------------- */
+
+.grafx-body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.grafx-tabs {
+  display: flex;
+  gap: 12px;
+  border-bottom: 1px solid #000;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.03);
+  padding-bottom: 12px;
+}
+
+.grafx-tab {
+  background: #020305;
+  border: 1px solid #000000;
+  box-shadow: inset 0 6px 12px rgba(0,0,0,0.9), inset 0 1px 3px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.05);
+  color: var(--grafx-text-dim);
+  font-family: var(--grafx-mono-font);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.grafx-tab:hover {
+  color: var(--grafx-text-hud);
+}
+
+.grafx-tab.is-active {
+  background: #010605;
+  color: #5effa4;
+  text-shadow: 0 0 6px rgba(94,255,164,0.6);
+  border-color: #040d09;
+  box-shadow: inset 0 4px 10px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.04);
+}
+
+/* ---------------------------------------------------------------- */
+/* Tab Content Areas                                                */
+/* ---------------------------------------------------------------- */
+
+.grafx-tab-content {
+  display: none;
+  min-height: 250px;
+  padding: 16px;
+  background: #010a08;
+  border-radius: 2px;
+  border: 1px solid #040d09;
+  box-shadow: inset 0 4px 10px rgba(0,0,0,0.95), 0 1px 1px rgba(255,255,255,0.04);
+  position: relative;
+  overflow: hidden;
+}
+
+.grafx-tab-content.is-active {
+  display: block;
+}
+
+/* Phosphor Scanlines inside the content area */
+.grafx-tab-content::before {
+  content: ''; position: absolute; inset: 0;
+  background:
+    linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px) 0 0 / 3px 100%,
+    linear-gradient(180deg, rgba(0,0,0,0.2) 1px, transparent 1px) 0 0 / 100% 2px;
+  pointer-events: none; z-index: 3;
+}
+
+.grafx-tab-content p {
+  position: relative;
+  z-index: 4;
+  font-family: var(--grafx-mono-font);
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 500;
+  color: #5effa4;
+  text-shadow: 0 0 6px rgba(94,255,164,0.5);
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- */
+/* Brutalist Early-2000s HTML Forum Style (Tab 4)                   */
+/* ---------------------------------------------------------------- */
+
+.grafx-tab-content.forum-style {
+  background: #ffffff; /* Classic white background */
+  border: 2px solid #808080;
+  box-shadow: inset -2px -2px #dfdfdf, inset 2px 2px #0a0a0a;
+  color: #000000;
+  padding: 8px;
+}
+
+.grafx-tab-content.forum-style::before {
+  display: none; /* Turn off the CRT scanline overlay just for this brutalist tab */
+}
+
+.forum-table {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "Times New Roman", Times, serif;
+  font-size: 14px;
+  background: #f0f0f0;
+  border: 1px solid #000;
+}
+
+.forum-table th {
+  background-color: #000080;
+  color: #ffffff;
+  padding: 4px;
+  text-align: left;
+  font-weight: bold;
+  border: 1px solid #000;
+}
+
+.forum-table td {
+  padding: 6px;
+  border: 1px solid #808080;
+  vertical-align: top;
+}
+
+.forum-label {
+  background-color: #e0e0e0;
+  width: 100px;
+  font-weight: bold;
+}
+
+.forum-input,
+.forum-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: "Courier New", Courier, monospace;
+  font-size: 14px;
+  border: 2px inset #ffffff;
+  background: #ffffff;
+  color: #000000;
+  padding: 2px 4px;
+}
+
+.forum-submit-row {
+  text-align: center;
+  background: #e0e0e0;
+  padding: 8px !important;
+}
+
+.forum-submit {
+  font-family: "Times New Roman", Times, serif;
+  font-size: 14px;
+  padding: 4px 12px;
+  background: #d4d0c8;
+  border: 2px outset #ffffff;
+  cursor: pointer;
+  color: #000;
+}
+
+.forum-submit:active {
+  border-style: inset;
+}

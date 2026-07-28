@@ -43,6 +43,8 @@ import '../styles/ui.css';
 		     ZONE 01 — HEART SEQUENCE (scroll-driven)
 		════════════════════════════════════════════ -->
 		<section class="hero-sequence" id="hero" data-hero>
+			<div id="phase-1" style="position: absolute; top: 0;"></div>
+			<div id="phase-2" style="position: absolute; top: 150vh;"></div>
 			<div class="hero-sticky">
 				<canvas class="heart-canvas" data-heart-canvas></canvas>
 				<canvas class="fire-canvas"  data-fire-canvas></canvas>
@@ -75,6 +77,7 @@ import '../styles/ui.css';
 		     ZONE 02 — DREAM CANVAS
 		════════════════════════════════════════════ -->
 		<section class="dream-zone canvas-zone" data-canvas-zone="dream">
+			<div id="phase-3" style="position: absolute; top: 0;"></div>
 			<canvas data-dream-canvas></canvas>
 			<!-- No DOM copy — declaration is rendered character-by-character via pretext onto canvas -->
 		</section>
@@ -83,6 +86,7 @@ import '../styles/ui.css';
 			ZONE 03 — BIOME SPHERE (Works)
 		════════════════════════════════════════════ -->
 		<section class="biome-zone canvas-zone" id="work" data-canvas-zone="biome">
+			<div id="phase-4" style="position: absolute; top: 0;"></div>
 			<div class="biome-sticky">
 				<canvas class="biome-canvas" data-biome-canvas></canvas>
 				
@@ -132,6 +136,15 @@ import '../styles/ui.css';
 			</div>
 		</section>
 
+
+		<nav class="phase-nav">
+			<a href="#phase-1" class="phase-link" data-title="Heart">#1</a>
+			<a href="#phase-2" class="phase-link" data-title="Text">#2</a>
+			<a href="#phase-3" class="phase-link" data-title="Staircase">#3</a>
+			<a href="#phase-4" class="phase-link" data-title="Biome">#4</a>
+			<a href="#phase-5" class="phase-link" data-title="TV">#5</a>
+		</nav>
+
 	</main>
 </Layout>
 
@@ -146,8 +159,7 @@ import '../styles/ui.css';
 	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
 	import { setupDreamCanvas, setDreamScrollVelocity, setDreamScrollProgress } from '../scenes/DreamCanvas';
-	import { setupVoidCanvas } from '../scenes/VoidCanvas';
-
+	
 	let setDreamScrollVelocity: ((v: number) => void) | null = null;
 	let setDreamScrollProgress: ((p: number) => void) | null = null;
 
@@ -251,15 +263,6 @@ import '../styles/ui.css';
 			const originalDestroy = (window as any).destroy || function() {};
 			(window as any).destroy = () => { originalDestroy(); dream?.destroy(); };
 		} catch (error) { console.error("Failed to load Dream scene:", error); }
-	}
-
-	async function initVoidScene() {
-		try {
-			const { setupVoidCanvas } = await import('../scenes/VoidCanvas');
-			const void_ = setupVoidCanvas();
-			const originalDestroy = (window as any).destroy || function() {};
-			(window as any).destroy = () => { originalDestroy(); void_?.destroy(); };
-		} catch (error) { console.error("Failed to load Void scene:", error); }
 	}
 
 	document.addEventListener('DOMContentLoaded', () => {

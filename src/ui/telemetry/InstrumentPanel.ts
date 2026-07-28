@@ -113,8 +113,9 @@ export class InstrumentPanel {
     // Label list + collapsible detail section support
     private labelRows: HTMLElement[] = [];
     private detailSection: HTMLElement | null = null;
-    private _detailHeight = 0;
-    private _lastActiveLabel = -2;
+    private _detailHeight: number = 0;
+    private _currentTitle: string = '';
+    private _titleScrambleInterval: number | null = null;
 
     constructor(config: PanelConfig) {
         this.id = config.id;
@@ -169,10 +170,6 @@ export class InstrumentPanel {
         const switches = config.channels.filter(c => c.type === 'toggle' || c.type === 'led');
         const texts = config.channels.filter(c => c.type === 'text');
 
-        if (meters.length) faceplate.appendChild(this._row(meters));
-        if (mids.length) faceplate.appendChild(this._row(mids));
-        if (switches.length) faceplate.appendChild(this._row(switches));
-
         // Build integrated label list if the config provides one
         if (config.labels && config.labels.length > 0) {
             const labelList = document.createElement('div');
@@ -187,13 +184,27 @@ export class InstrumentPanel {
             faceplate.appendChild(labelList);
         }
 
-        // Wrap text channels in a collapsible detail section so they can
-        // shrink/expand independently of the label list above them.
-        if (texts.length > 0) {
+        if (config.collapsible) {
             this.detailSection = document.createElement('div');
             this.detailSection.className = 'panel__detail-section';
-            texts.forEach((c) => this.detailSection!.appendChild(this._channel(c)));
+            if (meters.length) this.detailSection.appendChild(this._row(meters));
+            if (mids.length) this.detailSection.appendChild(this._row(mids));
+            if (switches.length) this.detailSection.appendChild(this._row(switches));
+            if (texts.length) texts.forEach((c) => this.detailSection!.appendChild(this._channel(c)));
             faceplate.appendChild(this.detailSection);
+        } else {
+            if (meters.length) faceplate.appendChild(this._row(meters));
+            if (mids.length) faceplate.appendChild(this._row(mids));
+            if (switches.length) faceplate.appendChild(this._row(switches));
+
+            // Wrap text channels in a collapsible detail section so they can
+            // shrink/expand independently of the label list above them.
+            if (texts.length > 0) {
+                this.detailSection = document.createElement('div');
+                this.detailSection.className = 'panel__detail-section';
+                texts.forEach((c) => this.detailSection!.appendChild(this._channel(c)));
+                faceplate.appendChild(this.detailSection);
+            }
         }
 
         const footer = document.createElement('div');
@@ -335,6 +346,74 @@ export class InstrumentPanel {
         if (this._lastTransform === transform) return;
         this._lastTransform = transform;
         this.root.style.transform = transform;
+    }
+
+    public setTitle(title: string) {
+        if (!this.root || this._currentTitle === title) return;
+        this._currentTitle = title;
+        const el = this.root.querySelector('.panel__title') as HTMLElement;
+        if (!el) return;
+
+        if (this._titleScrambleInterval !== null) {
+            clearInterval(this._titleScrambleInterval);
+        }
+
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+        let iteration = 0;
+
+        this._titleScrambleInterval = window.setInterval(() => {
+            el.innerText = title
+                .split('')
+                .map((letter, index) => {
+                    if (letter === ' ') return ' ';
+                    if (index < iteration) return title[index];
+                    return chars[Math.floor(Math.random() * chars.length)];
+                })
+                .join('');
+            
+            if (iteration >= title.length) {
+                clearInterval(this._titleScrambleInterval!);
+                this._titleScrambleInterval = null;
+                el.innerText = title;
+            }
+            
+            iteration += 1 / 2; // Decodes half a character per tick (approx 60ms per char)
+        }, 30);
+    }
+
+    public setTitleTransition(state0: string, state1: string, progress: number) {
+        if (!this.root) return;
+        const el = this.root.querySelector('.panel__title') as HTMLElement;
+        if (!el) return;
+
+        if (this._titleScrambleInterval !== null) {
+            clearInterval(this._titleScrambleInterval);
+            this._titleScrambleInterval = null;
+        }
+
+        // Only rebuild DOM if it's not already our transition container
+        if (!el.dataset.transitioning) {
+            el.dataset.transitioning = 'true';
+            el.style.position = 'relative';
+            el.style.display = 'inline-block';
+            el.style.verticalAlign = 'top';
+        }
+
+        const pct = (progress * 100).toFixed(1);
+        const scannerOpacity = (progress > 0.01 && progress < 0.99) ? 1 : 0;
+
+        el.innerHTML = `
+            <span style="opacity: 0; pointer-events: none; white-space: pre;">${state1}</span>
+            <span style="position: absolute; left: 0; top: 0; white-space: pre; clip-path: inset(0 0 0 ${pct}%); color: rgba(255, 255, 255, 0.4);">${state0}</span>
+            <span style="position: absolute; left: 0; top: 0; white-space: pre; clip-path: inset(0 calc(100% - ${pct}%) 0 0);">${state1}</span>
+            <div style="position: absolute; left: ${pct}%; top: -2px; bottom: -2px; width: 2px; background: #0ff; box-shadow: 0 0 6px #0ff; transform: translateX(-50%); opacity: ${scannerOpacity};"></div>
+        `;
+    }
+
+    public setEyebrow(eyebrow: string) {
+        if (!this.root) return;
+        const el = this.root.querySelector('.panel__eyebrow') as HTMLElement;
+        if (el) el.innerText = eyebrow;
     }
 
     public setOpacity(opacity: number) {

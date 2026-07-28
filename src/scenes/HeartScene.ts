@@ -43,6 +43,8 @@ import { createLoopController } from '../utils/canvas';
 import type { LoopController } from '../utils/canvas';
 import { markReady } from '../utils/loadState';
 import { setHoverTarget } from '../utils/hoverTargets';
+import StatsGl from 'stats-gl';
+
 
 // ---------------------------------------------------------------------------
 // Types & Constants
@@ -683,9 +685,26 @@ export function setupHeartScene(): LoopController | null {
                 { id: 'sliceName', type: 'text', label: 'Region', placeholder: 'Scanning...' },
                 { id: 'sliceText', type: 'text', label: 'Function', placeholder: 'Hover a slice to inspect tissue function.' }
             ]
+        },
+        {
+            id: 'engine-diagnostics',
+            eyebrow: 'SYS-00',
+            title: 'Engine Diagnostics',
+            brand: 'PERFORMANCE',
+            model: 'GL-1',
+            channels: [
+                { id: 'fps', type: 'digital', label: 'Frame Rate', format: (v) => v.toFixed(1) + ' FPS' },
+                { id: 'drawCalls', type: 'digital', label: 'Draw Calls' },
+                { id: 'triangles', type: 'digital', label: 'Triangles' },
+                { id: 'heat', type: 'meter', label: 'Core Temp', min: 0, max: 100, majorStep: 25, redlineFrom: 80 },
+                { id: 'discharge', type: 'led', label: 'Discharge' },
+                { id: 'coreColor', type: 'text', label: 'Emissive Color', placeholder: '#000000' }
+            ],
+            collapsible: true
         }
     ];
     panelConfigs.forEach(c => panelManager.registerPanel(c));
+
 
 	let pathLength = 0;
 	let pTop = 0;
@@ -1021,6 +1040,16 @@ export function setupHeartScene(): LoopController | null {
 		markReady('heart');
 	});
 	
+	const stats = new StatsGl({ trackGPU: true });
+	stats.init(renderer);
+	stats.dom.style.display = 'none'; // Keep hidden, we only use it for data
+	document.body.appendChild(stats.dom);
+
+	let frameCount = 0;
+	let lastFpsTime = performance.now();
+	let currentFps = 60;
+
+	
 	function applyDOMScrollState(state: ScrollState): void {
         const { progress, heartFade, hudProgress, terminalProgress } = state;
     
@@ -1132,7 +1161,9 @@ export function setupHeartScene(): LoopController | null {
 		targetProgress = Math.max(0, (window.scrollY - cachedSectionTop) / Math.max(cachedScrollableRange, 1));
 	}
 
+    renderer.info.autoReset = false;
     const render = (time: number): void => {
+        renderer.info.reset();
         const scrollVelocity = Math.abs(currentProgress - prevProgress);
         prevProgress = currentProgress;
         
@@ -1436,7 +1467,57 @@ export function setupHeartScene(): LoopController | null {
 		gridMaterial.uniforms.uTime.value = time * 0.001;
 
         composer.render();
+
+        stats.update();
+
+        // Calculate a fallback FPS in case stats-gl doesn't expose it directly
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFpsTime >= 1000) {
+            currentFps = frameCount * 1000 / (now - lastFpsTime);
+            frameCount = 0;
+            lastFpsTime = now;
+        }
+
+        // Try to get FPS from stats-gl (from its internal log array), fallback to our own calc
+        const statsAny = stats as any;
+        const fpsLog = statsAny.averageFps?.logs;
+        const statsFps = (fpsLog && fpsLog.length > 0) ? fpsLog[fpsLog.length - 1] : currentFps;
+
+        // Position strictly in the top right corner
+        // The panel's base width is 530px, scaled via CSS var(--panel-scale, 0.70).
+        // Since transform-origin is center, we must offset by ~500 to keep the scaled edge in bounds.
+        const engineMargin = 24;
+        const engineX = window.innerWidth - 600;
+        const engineY = engineMargin;
+        
+        const engineVisibility = smoothstep(0.01, 0.04, currentProgress) * (1.0 - smoothstep(0.92, 0.94, currentProgress));
+        // Start collapsed, then expand (0 -> 1) exactly when the first set of telemetry panels fades out (0.52 - 0.62)
+        const engineExpanded = smoothstep(0.52, 0.62, currentProgress);
+
+        panelManager.update('engine-diagnostics', {
+            x: engineX,
+            y: engineY,
+            z: 0, // Flatten perspective
+            rotationY: 0, // Flatten perspective
+            opacity: engineVisibility,
+            scaleY: engineExpanded,
+            titleState0: 'SYSTEM STANDBY',
+            titleState1: 'ENGINE DIAGNOSTICS',
+            titleProgress: engineExpanded,
+            values: {
+                fps: statsFps,
+                drawCalls: renderer.info.render.calls,
+                triangles: renderer.info.render.triangles,
+                heat: dissectionProgress * 100,
+                discharge: dischargeActive ? 1 : 0,
+                coreColor: slices.length > 0 ? '#' + slices[0].userData.materials.solid.emissive.getHexString().toUpperCase() : '#000000'
+            }
+        });
     };
+
+	// Set autoReset to false so we can accumulate draw calls across all EffectComposer passes
+	renderer.info.autoReset = false;
 
 	const controller = createLoopController(section, render);
 
