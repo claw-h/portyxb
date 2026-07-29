@@ -30,6 +30,8 @@ let renderedProgressZ = 0;
 
 let targetProgressX = 0; // Horizontal offset (-1.0 to 1.0 or unbounded)
 let renderedProgressX = 0;
+let isBiomeActive = false;
+let currentExitProgress = 0;
 
 const MAX_X_TRAVEL_RANGE = 70; // Maximum lateral movement distance in world units
 
@@ -39,6 +41,8 @@ let flashStartTime = 0;
 const FLASH_DURATION_MS = 600; 
 
 export function setBiomeScrollProgress(progress: number): void {
+    isBiomeActive = (progress > 0 && progress < 1);
+    
     if (isFlashSequenceActive && !isFlashSequenceComplete) {
         targetProgressZ = MathUtils.clamp(progress, 0, 0.999);
         return;
@@ -754,6 +758,14 @@ export function setupBiomeSphere(): LoopController | null {
     };
 
     const onWheel = (e: WheelEvent) => {
+        // Prevent all vertical scrolling (locking user into WASD) only when inside the BiomeSphere
+        // and before the collapse begins
+        if (isBiomeActive && currentExitProgress <= 0) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+        }
+
         if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || e.shiftKey) {
             e.preventDefault(); 
             const delta = e.shiftKey ? e.deltaY : e.deltaX;
@@ -788,14 +800,16 @@ export function setupBiomeSphere(): LoopController | null {
         } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
             targetProgressX = MathUtils.clamp(targetProgressX + 0.08, -1, 1);
         } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+            if (isBiomeActive) e.preventDefault();
             window.scrollBy({ top: 75, behavior: 'smooth' });
         } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+            if (isBiomeActive) e.preventDefault();
             window.scrollBy({ top: -75, behavior: 'smooth' });
         }
     };
 
     window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('wheel', onWheel, { passive: false }); 
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true }); 
     window.addEventListener('touchstart', onTouchStart, { passive: true });
     window.addEventListener('touchmove', onTouchMove, { passive: true });
     window.addEventListener('keydown', onKeyDown);
@@ -804,8 +818,7 @@ export function setupBiomeSphere(): LoopController | null {
         window.innerWidth * Math.min(window.devicePixelRatio, 1.5),
         window.innerHeight * Math.min(window.devicePixelRatio, 1.5),
         {
-            type: HalfFloatType,
-            samples: 8
+            type: HalfFloatType
         }
     );
 
@@ -1836,6 +1849,7 @@ export function setupBiomeSphere(): LoopController | null {
         const entryProgress = 1.0 - MathUtils.clamp(renderedProgressZ / ENTRY_PHASE_END, 0, 1);
         const travelProgress = MathUtils.clamp((renderedProgressZ - ENTRY_PHASE_END) / (TRAVEL_PHASE_END - ENTRY_PHASE_END), 0, 1);
         const exitProgress = MathUtils.clamp((renderedProgressZ - TRAVEL_PHASE_END) / (1 - TRAVEL_PHASE_END), 0, 1);
+        currentExitProgress = exitProgress;
         
         const travelZ = travelProgress * TRACK_TRAVEL_DISTANCE;
         const travelX = renderedProgressX * MAX_X_TRAVEL_RANGE;
@@ -2086,7 +2100,7 @@ export function setupBiomeSphere(): LoopController | null {
 
         window.removeEventListener('resize', resize);
         window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('wheel', onWheel);
+        window.removeEventListener('wheel', onWheel, { capture: true });
         window.removeEventListener('touchstart', onTouchStart);
         window.removeEventListener('touchmove', onTouchMove);
         window.removeEventListener('keydown', onKeyDown);
@@ -2143,6 +2157,20 @@ export function setupBiomeSphere(): LoopController | null {
         scene.clear();
     };
 
-    start();
-    return { start, stop, destroy, resize };
+    const observer = new IntersectionObserver(
+        ([entry]) => {
+            if (entry.isIntersecting) start();
+            else stop();
+        },
+        { threshold: 0.0 }
+    );
+    observer.observe(canvas);
+
+    const originalDestroy = destroy;
+    const destroyWithObserver = () => {
+        observer.disconnect();
+        originalDestroy();
+    };
+
+    return { start, stop, destroy: destroyWithObserver, resize };
 }

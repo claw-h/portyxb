@@ -676,7 +676,7 @@ export function setupDreamCanvas(): LoopController | null {
 	}
 
 	const renderer = new WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: false, powerPreference: 'high-performance' });	
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
 	const scene = new Scene();
 	scene.background = new Color(0x000000);
@@ -692,7 +692,7 @@ export function setupDreamCanvas(): LoopController | null {
 
 	const initialWidth = Math.floor(outputCanvas.clientWidth);
 	const initialHeight = Math.floor(outputCanvas.clientHeight);
-	const dpr = Math.min(window.devicePixelRatio, 2);
+	const dpr = Math.min(window.devicePixelRatio, 1.5);
 
 	bufferCanvas.width = initialWidth * dpr;
 	bufferCanvas.height = initialHeight * dpr;
@@ -734,7 +734,7 @@ export function setupDreamCanvas(): LoopController | null {
 	let canvasWasDrawn = false;
 
 	function applyResize(width: number, height: number): void {
-		const rdpr = Math.min(window.devicePixelRatio, 2);
+		const rdpr = Math.min(window.devicePixelRatio, 1.5);
 
 		bufferCanvas.width = width * rdpr;
 		bufferCanvas.height = height * rdpr;
@@ -813,7 +813,7 @@ export function setupDreamCanvas(): LoopController | null {
 
 		const width = lastWidth;
 		const height = lastHeight;
-		const dpr = Math.min(window.devicePixelRatio, 2);
+		const dpr = Math.min(window.devicePixelRatio, 1.5);
 
 		// 1. Calculate where the user ACTUALLY is (the target)
 		const targetScrollProgress = calcScrollProgress(sectionMetrics.top, sectionMetrics.height);
@@ -984,7 +984,7 @@ export function setupDreamCanvas(): LoopController | null {
 		composer.render();
 	};
 
-	innerController = createLoopController(section, render);
+	innerController = createLoopController(outputCanvas, render);
 
 	releaseResources = () => {
 		if (hasFinePointer) section.removeEventListener('mousemove', onMouseMove);

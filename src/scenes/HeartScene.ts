@@ -28,6 +28,9 @@ import {
 	MeshBasicMaterial, 
 	Mesh, 
 	PlaneGeometry,
+	ConeGeometry,
+	BoxGeometry,
+	CylinderGeometry,
 	Vector2,
 	Vector3,
 	Raycaster
@@ -838,7 +841,7 @@ export function setupHeartScene(): LoopController | null {
 	const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance', stencil: true });
 	renderer.localClippingEnabled = true;
 	renderer.setClearColor(0x000000, 0); 
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
 	renderer.toneMapping = ACESFilmicToneMapping;
 	renderer.toneMappingExposure = 1.0;
@@ -898,9 +901,8 @@ export function setupHeartScene(): LoopController | null {
             vec2 p = uv * 2.5; 
             f += 0.5000 * noise(p); p = p * 2.02;
             f += 0.2500 * noise(p); p = p * 2.03;
-            f += 0.1250 * noise(p); p = p * 2.01;
-            f += 0.0625 * noise(p);
-            return f / 0.9375;
+            f += 0.1250 * noise(p);
+            return f / 0.875;
         }
 
         void main() {
@@ -957,7 +959,7 @@ export function setupHeartScene(): LoopController | null {
 	blue.position.set(-3, -1.8, 3);
 	scene.add(ambient, key, blue);
 
-	const spotlightPointLight = new PointLight(0x8fdcff, 0, 5);
+	const spotlightPointLight = new PointLight(0x8fdcff, 0.001, 5);
 	scene.add(spotlightPointLight);
 
 	const gridMaterial = new ShaderMaterial({
@@ -1036,6 +1038,14 @@ export function setupHeartScene(): LoopController | null {
 		heartGroup.visible = true;
 		renderer.compile(scene, camera);
 		await new Promise(r => setTimeout(r, 20));
+
+		// Create an invisible proxy cylinder for raycasting to eliminate CPU overhead
+		// visible: true is required for Raycaster, but colorWrite/depthWrite = false makes it invisible
+		const proxyGeo = new CylinderGeometry(1.0, 0.9, 2.4, 16);
+		const proxyMat = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+		const proxyMesh = new Mesh(proxyGeo, proxyMat);
+		heartGroup.add(proxyMesh);
+		solidMeshes = [proxyMesh]; 
 
 		markReady('heart');
 	});
@@ -1146,6 +1156,13 @@ export function setupHeartScene(): LoopController | null {
 		const h = canvas.clientHeight;
 		renderer.setSize(w, h, false);
 		composer.setSize(w, h);
+		
+		// Force Bloom to base CSS resolution (which it halves internally to 0.5x CSS res).
+		// Without this, composer forces it to DPR resolution (1.5x CSS res -> 0.75x CSS res internally).
+		if (bloomPass.setSize) {
+			bloomPass.setSize(w, h);
+		}
+
 		camera.aspect = w / Math.max(h, 1);
 		camera.updateProjectionMatrix();
 
@@ -1279,7 +1296,15 @@ export function setupHeartScene(): LoopController | null {
             
             if (isIntersecting && isVisible) {
                 spotlightConfig.targetPos.copy(intersects[0].point);
-                hoveredSliceIndex = solidMeshes.indexOf(intersects[0].object as Mesh);
+                
+                // We are raycasting against the single invisible proxy cylinder
+                // Convert world intersection point to local space to map to the 5 slices
+                const localPoint = intersects[0].point.clone();
+                heartGroup.worldToLocal(localPoint);
+                
+                // Cylinder is 2.4 units tall (-1.2 to 1.2). Slice 0 is bottom, Slice 4 is top.
+                const normalizedY = (localPoint.y + 1.2) / 2.4;
+                hoveredSliceIndex = Math.max(0, Math.min(SLICE_COUNT - 1, Math.floor(normalizedY * SLICE_COUNT)));
             } else {
                 hoveredSliceIndex = -1;
             }
@@ -1290,7 +1315,6 @@ export function setupHeartScene(): LoopController | null {
             }
             
             setHoverTarget('heart', isIntersecting && isVisible);
-
             spotlightConfig.targetIntensity = (isIntersecting && isVisible) ? 1.0 : 0.0;
         } else {
             setHoverTarget('heart', false);
@@ -1519,7 +1543,8 @@ export function setupHeartScene(): LoopController | null {
 	// Set autoReset to false so we can accumulate draw calls across all EffectComposer passes
 	renderer.info.autoReset = false;
 
-	const controller = createLoopController(section, render);
+	// Pass the actual sticky canvas to the observer so it strictly pauses when the canvas leaves the viewport
+	const controller = createLoopController(canvas, render);
 
 	window.addEventListener('scroll', calculateTargetProgress, { passive: true });
 	window.addEventListener('resize', handleResize);

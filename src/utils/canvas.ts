@@ -38,7 +38,7 @@ export function createLoopController(
 			if (entry.isIntersecting) start();
 			else stop();
 		},
-		{ threshold: 0.04 },
+		{ threshold: 0.0 }, // 0.0 means it triggers as soon as 1px is visible, and stops when 0px is visible
 	);
 
 	observer.observe(section);

@@ -113,7 +113,7 @@ export function setupTelevisionScene(): LoopController | null {
 	
 	const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
 	renderer.setClearColor(0x000000, 0); // ensure background is perfectly transparent
-	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 	renderer.setSize(window.innerWidth, window.innerHeight);
 
 	const composer = new EffectComposer(renderer);
@@ -295,7 +295,7 @@ export function setupTelevisionScene(): LoopController | null {
 	};
 	window.addEventListener('click', onClick);
 
-	const loop = createLoopController(section, (time) => {
+	const loop = createLoopController(canvas, (time) => {
 		const deltaTime = Math.max(16, time - lastTime);
 		lastTime = time;
 		// Update Lens Uniforms & Light Intensity (Fade from black)
