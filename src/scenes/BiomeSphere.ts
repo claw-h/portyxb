@@ -1,10 +1,10 @@
-import { CylinderGeometry, ConeGeometry, DodecahedronGeometry, IcosahedronGeometry, InstancedMesh, Object3D, DoubleSide, TorusGeometry, 
+import { ShaderMaterial, CylinderGeometry, SphereGeometry, ConeGeometry, DodecahedronGeometry, IcosahedronGeometry, InstancedMesh, Object3D, DoubleSide, TorusGeometry, 
     Vector3, WebGLRenderer, ACESFilmicToneMapping, FogExp2, Scene, 
     PerspectiveCamera, AmbientLight, DirectionalLight, Mesh, PlaneGeometry, 
     Group, MathUtils, Sprite, SpriteMaterial, CanvasTexture, AdditiveBlending,
     WebGLRenderTarget, HalfFloatType, MeshBasicMaterial, Color, Float32BufferAttribute, Box3,
     Points, PointsMaterial, BufferGeometry, RepeatWrapping, MeshStandardMaterial,
-    PointLight, Vector2, Raycaster, Plane, TextureLoader, SRGBColorSpace, BoxGeometry, Material,
+    PointLight, Vector2, Raycaster, Plane, TextureLoader, SRGBColorSpace, BoxGeometry, Material, PCFSoftShadowMap,
     Matrix4, Quaternion, Euler, LoadingManager
 } from 'three';
 import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'; // <--- Add EXRLoader
@@ -13,8 +13,10 @@ import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUti
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
 
 import { createNonEuclideanMaterial, applyNonEuclideanCurve } from '../materials/NonEuclideanMaterial';
+import { createHorizonTextures, createHorizonMaterial } from '../materials/HorizonMorphMaterial';
 import type { LoopController } from '../utils/canvas';
 
 const _cameraTarget = new Vector3(0, 0, -10);
@@ -48,6 +50,224 @@ export function setBiomeHorizontalProgress(progress: number): void {
     targetProgressX = MathUtils.clamp(progress, -1, 1);
 }
 
+
+// --- PROCEDURAL PBR GENERATOR ---
+function generateMapsFromDiffuse(diffuseCanvas: HTMLCanvasElement): { normalMap: CanvasTexture, bumpMap: CanvasTexture } {
+    const width = diffuseCanvas.width;
+    const height = diffuseCanvas.height;
+    
+    // Bump Map Canvas
+    const bumpCanvas = document.createElement('canvas');
+    bumpCanvas.width = width;
+    bumpCanvas.height = height;
+    const bumpCtx = bumpCanvas.getContext('2d')!;
+    
+    // Normal Map Canvas
+    const normalCanvas = document.createElement('canvas');
+    normalCanvas.width = width;
+    normalCanvas.height = height;
+    const normalCtx = normalCanvas.getContext('2d')!;
+    
+    const dCtx = diffuseCanvas.getContext('2d')!;
+    const imgData = dCtx.getImageData(0, 0, width, height);
+    const data = imgData.data;
+    
+    const bumpData = bumpCtx.createImageData(width, height);
+    const bData = bumpData.data;
+    
+    const normalImgData = normalCtx.createImageData(width, height);
+    const nData = normalImgData.data;
+    
+    // Convert to grayscale for bump map
+    const heights = new Float32Array(width * height);
+    for (let i = 0; i < data.length; i += 4) {
+        // Luminance
+        const lum = (data[i] * 0.299 + data[i+1] * 0.587 + data[i+2] * 0.114);
+        bData[i] = lum;
+        bData[i+1] = lum;
+        bData[i+2] = lum;
+        bData[i+3] = 255;
+        heights[i/4] = lum / 255.0;
+    }
+    bumpCtx.putImageData(bumpData, 0, 0);
+    
+    // Compute Normal map using Sobel filter
+    const strength = 4.0;
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const left = heights[y * width + Math.max(x - 1, 0)];
+            const right = heights[y * width + Math.min(x + 1, width - 1)];
+            const up = heights[Math.max(y - 1, 0) * width + x];
+            const down = heights[Math.min(y + 1, height - 1) * width + x];
+            
+            let dx = (right - left) * strength;
+            let dy = (down - up) * strength;
+            let dz = 1.0;
+            
+            // Normalize
+            const len = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            dx /= len;
+            dy /= len;
+            dz /= len;
+            
+            // Map to 0-255 RGB
+            const i = (y * width + x) * 4;
+            nData[i] = (dx * 0.5 + 0.5) * 255;
+            nData[i+1] = (dy * 0.5 + 0.5) * 255;
+            nData[i+2] = (dz * 0.5 + 0.5) * 255;
+            nData[i+3] = 255;
+        }
+    }
+    normalCtx.putImageData(normalImgData, 0, 0);
+    
+    const nTex = new CanvasTexture(normalCanvas);
+    nTex.wrapS = RepeatWrapping; nTex.wrapT = RepeatWrapping;
+    
+    const bTex = new CanvasTexture(bumpCanvas);
+    bTex.wrapS = RepeatWrapping; bTex.wrapT = RepeatWrapping;
+    
+    return { normalMap: nTex, bumpMap: bTex };
+}
+
+
+
+// --- PROCEDURAL GEOMETRY DISPLACEMENT ---
+function displaceGeometry(geometry: BufferGeometry, intensity: number, scale: number = 1.0) {
+    const positions = geometry.attributes.position;
+    for (let i = 0; i < positions.count; i++) {
+        const x = positions.getX(i);
+        const y = positions.getY(i);
+        const z = positions.getZ(i);
+        
+        // Simple 3D pseudo-noise
+        const nx = Math.sin(x * scale) * Math.cos(z * scale) * Math.sin(y * scale);
+        const ny = Math.cos(x * scale * 1.5) * Math.sin(z * scale * 1.5);
+        const nz = Math.sin(x * scale * 2) * Math.sin(y * scale * 2);
+        
+        positions.setXYZ(i, x + nx * intensity, y + ny * intensity, z + nz * intensity);
+    }
+    geometry.computeVertexNormals();
+}
+
+// --- PROCEDURAL GROUND TEXTURES ---
+function createForestGround(): CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    
+    ctx.fillStyle = '#1a2916'; // Base dirt green
+    ctx.fillRect(0, 0, 512, 512);
+    
+    for (let i = 0; i < 4000; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const s = 1 + Math.random() * 5;
+        const color = Math.random() > 0.5 ? '#243b22' : '#304a29'; // Lighter moss/leaves
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, s, s);
+    }
+    
+    // Add dirt patches
+    for (let i = 0; i < 1500; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const s = 2 + Math.random() * 4;
+        ctx.fillStyle = 'rgba(40, 25, 15, 0.6)'; 
+        ctx.fillRect(x, y, s, s);
+    }
+    
+    const tex = new CanvasTexture(canvas);
+    tex.wrapS = RepeatWrapping; tex.wrapT = RepeatWrapping;
+    return tex;
+}
+
+function createCanyonGround(): CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    
+    ctx.fillStyle = '#6d4021'; // Terracotta
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // Cracked earth simulation
+    ctx.strokeStyle = '#4a2812';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 300; i++) {
+        ctx.beginPath();
+        const startX = Math.random() * 512;
+        const startY = Math.random() * 512;
+        ctx.moveTo(startX, startY);
+        let cx = startX;
+        let cy = startY;
+        for (let j = 0; j < 5; j++) {
+            cx += (Math.random() - 0.5) * 40;
+            cy += (Math.random() - 0.5) * 40;
+            ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+    }
+    
+    const tex = new CanvasTexture(canvas);
+    tex.wrapS = RepeatWrapping; tex.wrapT = RepeatWrapping;
+    return tex;
+}
+
+function createCityGround(): CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    
+    ctx.fillStyle = '#222222'; // Asphalt
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // Asphalt noise
+    for (let i = 0; i < 15000; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const l = Math.floor(20 + Math.random() * 40);
+        ctx.fillStyle = `rgb(${l},${l},${l})`;
+        ctx.fillRect(x, y, 1.5, 1.5);
+    }
+    
+    // Add some road lines
+    ctx.fillStyle = '#ccaa33';
+    ctx.fillRect(246, 0, 20, 512);
+    ctx.fillStyle = '#222222';
+    for(let i=0; i<512; i+=40) {
+        ctx.fillRect(246, i+20, 20, 20); // Dashed
+    }
+    
+    const tex = new CanvasTexture(canvas);
+    tex.wrapS = RepeatWrapping; tex.wrapT = RepeatWrapping;
+    return tex;
+}
+
+function createSavannaGround(): CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d')!;
+    
+    ctx.fillStyle = '#8f7a4e'; // Dusty yellow soil
+    ctx.fillRect(0, 0, 512, 512);
+    
+    // Sand noise
+    for (let i = 0; i < 10000; i++) {
+        const x = Math.random() * 512;
+        const y = Math.random() * 512;
+        const s = Math.random() > 0.5 ? 2 : 1;
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(200, 180, 100, 0.4)' : 'rgba(100, 80, 40, 0.4)';
+        ctx.fillRect(x, y, s, s);
+    }
+    
+    const tex = new CanvasTexture(canvas);
+    tex.wrapS = RepeatWrapping; tex.wrapT = RepeatWrapping;
+    return tex;
+}
+
 function createProceduralBarkTexture(): CanvasTexture {
     const canvas = document.createElement('canvas');
     canvas.width = 256;
@@ -72,45 +292,95 @@ function createProceduralBarkTexture(): CanvasTexture {
     return texture;
 }
 
-function createProceduralFacadeTexture(): CanvasTexture {
-    const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-        // Base siding (wood/vinyl)
-        ctx.fillStyle = '#9e8b76';
-        ctx.fillRect(0, 0, 512, 512);
-        ctx.fillStyle = '#8a7966';
-        for(let i=0; i<512; i+=16) {
-            ctx.fillRect(0, i, 512, 2);
+function createProceduralFacadeTexture(): { diffuseMap: CanvasTexture, emissiveMap: CanvasTexture } {
+    const dCanvas = document.createElement('canvas');
+    dCanvas.width = 512; dCanvas.height = 512;
+    const dCtx = dCanvas.getContext('2d')!;
+    
+    const eCanvas = document.createElement('canvas');
+    eCanvas.width = 512; eCanvas.height = 512;
+    const eCtx = eCanvas.getContext('2d')!;
+    
+    // Base siding (wood/vinyl)
+    dCtx.fillStyle = '#9e8b76';
+    dCtx.fillRect(0, 0, 512, 512);
+    dCtx.fillStyle = '#8a7966';
+    for(let i=0; i<512; i+=16) {
+        dCtx.fillRect(0, i, 512, 2);
+    }
+    
+    eCtx.fillStyle = '#000000';
+    eCtx.fillRect(0, 0, 512, 512);
+    
+    // Structured windows
+    const drawWindow = (x: number, y: number, w: number, h: number) => {
+        const isLit = Math.random() > 0.4;
+        dCtx.fillStyle = isLit ? '#ffcca4' : '#222222';
+        dCtx.fillRect(x, y, w, h);
+        
+        if (isLit) {
+            eCtx.fillStyle = '#ffffff';
+            eCtx.fillRect(x, y, w, h);
         }
         
-        // Structured windows: one on left, one on right
-        const drawWindow = (x: number, y: number, w: number, h: number) => {
-            ctx.fillStyle = Math.random() > 0.4 ? '#ffcca4' : '#222222';
-            ctx.fillRect(x, y, w, h);
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(x + w/2 - 2, y, 4, h); // vertical mullion
-            ctx.fillRect(x, y + h/2 - 2, w, 4); // horizontal mullion
-            ctx.strokeStyle = '#333333';
-            ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, w, h); // window frame
-        };
-
-        // Draw left window
-        drawWindow(64, 128, 128, 128);
-        // Draw right window
-        drawWindow(320, 128, 128, 128);
+        dCtx.fillStyle = '#ffffff';
+        dCtx.fillRect(x + w/2 - 2, y, 4, h); // vertical mullion
+        dCtx.fillRect(x, y + h/2 - 2, w, 4); // horizontal mullion
         
-        // Door in center bottom
-        ctx.fillStyle = '#553311';
-        ctx.fillRect(200, 320, 112, 192);
-    }
+        if (isLit) {
+            eCtx.fillStyle = '#000000'; // mullions don't glow
+            eCtx.fillRect(x + w/2 - 2, y, 4, h); 
+            eCtx.fillRect(x, y + h/2 - 2, w, 4); 
+        }
+        
+        dCtx.strokeStyle = '#333333';
+        dCtx.lineWidth = 4;
+        dCtx.strokeRect(x, y, w, h); // window frame
+    };
+
+    drawWindow(64, 128, 128, 128); // left window
+    drawWindow(320, 128, 128, 128); // right window
+    
+    // Door
+    dCtx.fillStyle = '#553311';
+    dCtx.fillRect(200, 320, 112, 192);
+    
+    const dTex = new CanvasTexture(dCanvas);
+    dTex.wrapS = RepeatWrapping; dTex.wrapT = RepeatWrapping; dTex.repeat.set(1, 1);
+    
+    const eTex = new CanvasTexture(eCanvas);
+    eTex.wrapS = RepeatWrapping; eTex.wrapT = RepeatWrapping; eTex.repeat.set(1, 1);
+    
+    return { diffuseMap: dTex, emissiveMap: eTex };
+}
+
+
+function createProceduralLeafTexture(): CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Draw an organic leaf shape
+    ctx.fillStyle = '#4da84a';
+    ctx.beginPath();
+    ctx.moveTo(32, 4);
+    ctx.quadraticCurveTo(60, 20, 32, 60);
+    ctx.quadraticCurveTo(4, 20, 32, 4);
+    ctx.fill();
+    
+    // Veins
+    ctx.strokeStyle = '#2d682a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(32, 60);
+    ctx.lineTo(32, 10);
+    ctx.moveTo(32, 40); ctx.lineTo(45, 25);
+    ctx.moveTo(32, 40); ctx.lineTo(19, 25);
+    ctx.moveTo(32, 50); ctx.lineTo(42, 40);
+    ctx.moveTo(32, 50); ctx.lineTo(22, 40);
+    ctx.stroke();
+    
     const tex = new CanvasTexture(canvas);
-    tex.wrapS = RepeatWrapping;
-    tex.wrapT = RepeatWrapping;
-    tex.repeat.set(1, 1);
     return tex;
 }
 
@@ -237,6 +507,12 @@ export function setupBiomeSphere(): LoopController | null {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.toneMapping = ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = PCFSoftShadowMap;
+    // We use PCFSoftShadowMap but it requires importing it. 
+    // Let's just use the default (PCFShadowMap) to avoid import issues, or add the import.
+    // Three exports PCFSoftShadowMap, I will add it to the import.
+
     
     const scene = new Scene();
 
@@ -253,6 +529,8 @@ export function setupBiomeSphere(): LoopController | null {
     let currentFogMult = 1.0;
     let targetFogMult = 1.0;
     let lightningFlash = 0.0;
+    let targetWetness = 0.0;
+    let currentWetness = 0.0;
     let lastWeatherChange = 0; // will be updated on first tick
 
     let lastTime = 0;
@@ -264,7 +542,86 @@ export function setupBiomeSphere(): LoopController | null {
 
     
     
+
     const camera = new PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    scene.add(camera); // Required for camera children to render
+
+    // --- HORIZON BACKDROP ---
+    const horizonTextures = createHorizonTextures();
+    const horizonMaterial = createHorizonMaterial();
+    horizonMaterial.uniforms.tDiffuseCurrent.value = horizonTextures[0];
+    horizonMaterial.uniforms.tDiffuseNext.value = horizonTextures[1];
+    
+    // A semi-sphere (dome) to act as the horizon backdrop
+    const horizonGeo = new SphereGeometry(300, 64, 32, 0, Math.PI * 2, 0, Math.PI / 2);
+    const horizonMesh = new Mesh(horizonGeo, horizonMaterial);
+    horizonMesh.position.set(0, -20, 0); // Sink it slightly so the equator blends into the ground fog
+    horizonMesh.frustumCulled = false;
+    camera.add(horizonMesh);
+
+    // --- ZERO-PASS LENS DIRT ---
+    const createLensDirt = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 512;
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = '#000000'; ctx.fillRect(0, 0, 512, 512);
+        
+        ctx.fillStyle = 'rgba(255,255,255,0.05)';
+        for(let i=0; i<300; i++) { // dust
+            ctx.beginPath();
+            ctx.arc(Math.random()*512, Math.random()*512, Math.random()*3, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+        for(let i=0; i<50; i++) { // scratches
+            ctx.beginPath();
+            const sx = Math.random()*512; const sy = Math.random()*512;
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(sx + (Math.random()-0.5)*40, sy + (Math.random()-0.5)*40);
+            ctx.stroke();
+        }
+        const tex = new CanvasTexture(canvas);
+        return tex;
+    };
+
+    const lensUniforms = {
+        uDirtMap: { value: createLensDirt() },
+        uSunDir: { value: new Vector3(0,1,0) },
+        uCamFwd: { value: new Vector3(0,0,-1) }
+    };
+
+    const lensMat = new ShaderMaterial({
+        uniforms: lensUniforms,
+        transparent: true,
+        depthWrite: false,
+        depthTest: false,
+        blending: AdditiveBlending,
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0); // Fixed to screen space
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D uDirtMap;
+            uniform vec3 uSunDir;
+            uniform vec3 uCamFwd;
+            varying vec2 vUv;
+            void main() {
+                float alignment = max(0.0, dot(normalize(uSunDir), normalize(uCamFwd)));
+                float flare = pow(alignment, 8.0); // Only visible when looking straight at sun
+                vec4 dirt = texture2D(uDirtMap, vUv);
+                gl_FragColor = vec4(dirt.rgb * flare * 2.5, dirt.a * flare);
+            }
+        `
+    });
+
+    const lensPlane = new Mesh(new PlaneGeometry(2, 2), lensMat);
+    lensPlane.frustumCulled = false;
+    lensPlane.renderOrder = 999;
+    camera.add(lensPlane);
+
 
     const cursorUniforms = {
         uCursorPos: { value: new Vector3(0, 0, 0) },
@@ -279,7 +636,17 @@ export function setupBiomeSphere(): LoopController | null {
     scene.add(cursorLight);
     
     const dirLight = new DirectionalLight(0xffffff, 0.0); // Intensity managed in tick
-    dirLight.position.set(50, 100, 50);
+    dirLight.position.set(100, 200, 50);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024; // Halved memory
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 200; // Drastically tightened
+    dirLight.shadow.camera.left = -80;
+    dirLight.shadow.camera.right = 80;
+    dirLight.shadow.camera.top = 80;
+    dirLight.shadow.camera.bottom = -80;
+    dirLight.shadow.bias = -0.001;
     scene.add(dirLight);
 
     const biomeEnvs = [
@@ -482,6 +849,109 @@ export function setupBiomeSphere(): LoopController | null {
 
     const fisheyePass = new ShaderPass(FisheyeShader);
     composer.addPass(fisheyePass);
+    
+    // Depth of Field
+    const bokehPass = new BokehPass(scene, camera, {
+        focus: 50.0,
+        aperture: 0.0005, // subtle aperture for wide depth of field
+        maxblur: 0.008 // subtle blur amount
+    });
+    composer.addPass(bokehPass);
+
+    // --- CRT TV Shutdown Effect (for final Savanna exit) ---
+    const CRTShutdownShader = {
+        uniforms: {
+            tDiffuse: { value: null },
+            uShutdown: { value: 0.0 } // 0 = normal, 1 = fully collapsed to singularity
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D tDiffuse;
+            uniform float uShutdown;
+            varying vec2 vUv;
+
+            void main() {
+                vec2 uv = vUv;
+                vec2 center = vec2(0.5, 0.5);
+
+                if (uShutdown <= 0.0) {
+                    gl_FragColor = texture2D(tDiffuse, uv);
+                    return;
+                }
+
+                // Phase 1 (0.0 -> 0.6): Vertical squeeze into a horizontal line
+                // Phase 2 (0.6 -> 0.9): Horizontal squeeze into a dot
+                // Phase 3 (0.9 -> 1.0): Dot fades and shrinks to nothing
+
+                float vSqueeze = smoothstep(0.0, 0.6, uShutdown); // 0->1 for vertical collapse
+                float hSqueeze = smoothstep(0.6, 0.9, uShutdown); // 0->1 for horizontal collapse
+                float dotFade  = smoothstep(0.9, 1.0, uShutdown); // 0->1 for final fade
+
+                // Squeeze vertically: map UV.y from center outward
+                float halfH = mix(0.5, 0.003, vSqueeze); // height shrinks to a thin line
+                float halfW = mix(0.5, 0.006, hSqueeze); // width shrinks to a dot
+
+                // Check if the pixel falls within the squeezed rectangle
+                if (abs(uv.y - center.y) > halfH || abs(uv.x - center.x) > halfW) {
+                    gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+                    return;
+                }
+
+                // Remap UVs to sample from the full image into the squeezed area
+                vec2 remappedUv;
+                remappedUv.x = (uv.x - center.x) / (halfW * 2.0) + 0.5;
+                remappedUv.y = (uv.y - center.y) / (halfH * 2.0) + 0.5;
+
+                vec4 col = texture2D(tDiffuse, remappedUv);
+
+                // Add slight glow/bloom to the collapsed line
+                float edgeDist = abs(uv.y - center.y) / max(halfH, 0.001);
+                float lineGlow = (1.0 - edgeDist) * vSqueeze * (1.0 - hSqueeze) * 0.5;
+                col.rgb += vec3(0.6, 0.8, 1.0) * lineGlow;
+
+                // Add dot glow during final phase
+                float dotDist = length(uv - center) / max(halfW, 0.001);
+                float dotGlow = (1.0 - dotDist) * hSqueeze * (1.0 - dotFade) * 1.5;
+                col.rgb += vec3(0.7, 0.9, 1.0) * dotGlow;
+
+                // Final fade to black
+                col.rgb *= (1.0 - dotFade);
+
+                gl_FragColor = col;
+            }
+        `
+    };
+    const crtShutdownPass = new ShaderPass(CRTShutdownShader);
+    composer.addPass(crtShutdownPass);
+
+    // --- Fade-from-Black overlay (LAST pass — covers everything) ---
+    const FadeBlackShader = {
+        uniforms: {
+            tDiffuse: { value: null },
+            uBlackness: { value: 1.0 } // 1 = pure black, 0 = fully visible
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+        `,
+        fragmentShader: `
+            uniform sampler2D tDiffuse;
+            uniform float uBlackness;
+            varying vec2 vUv;
+            void main() {
+                vec4 col = texture2D(tDiffuse, vUv);
+                gl_FragColor = vec4(col.rgb * (1.0 - uBlackness), 1.0);
+            }
+        `
+    };
+    const fadeBlackPass = new ShaderPass(FadeBlackShader);
+    composer.addPass(fadeBlackPass);
 
     const trackGroup = new Group();
     scene.add(trackGroup);
@@ -489,10 +959,10 @@ export function setupBiomeSphere(): LoopController | null {
     const gltfLoader = new GLTFLoader();
 
     const barkTexture = createProceduralBarkTexture();
-    const facadeTexture = createProceduralFacadeTexture();
+    const facadeMaps = createProceduralFacadeTexture();
     const foliageTexture = createProceduralFoliageTexture();
 
-    const BIOME_SPACING = 300;
+    const BIOME_SPACING = 1500;
     const biomes = [
         { name: 'Forest',      color: 0x1B3320, texture: '/textures/forest'},
         { name: 'Canyon',      color: 0x5C4033, texture: '/textures/western'},
@@ -500,7 +970,7 @@ export function setupBiomeSphere(): LoopController | null {
         { name: 'Savanna',     color: 0x111116, texture: '/textures/night-canyon'},
     ];
 
-    const trackMaterials: Array<{ transparent: boolean; opacity: number; userData?: any }> = [];
+    const trackMaterials: Material[] = [];
 
     
     // Helper to apply wireframe wrapper for City buildings
@@ -582,8 +1052,18 @@ export function setupBiomeSphere(): LoopController | null {
                     if (positions[i*3+1] > 40) positions[i*3+1] = 0;
                     if (positions[i*3+1] < 0) positions[i*3+1] = 40;
                 } else if (behavior === 'moth') {
-                    positions[i*3+1] += Math.sin(Date.now()*0.005 + i) * 0.05;
-                    positions[i*3] += Math.cos(Date.now()*0.005 + i) * 0.05;
+                    const time = Date.now() * 0.002 + i;
+                    // Erratic fluttering
+                    positions[i*3] += Math.sin(time * 2.5) * 0.08 + (Math.random()-0.5)*0.05;
+                    positions[i*3+1] += Math.cos(time * 3.1) * 0.08 + (Math.random()-0.5)*0.05;
+                    positions[i*3+2] += Math.sin(time * 1.7) * 0.08;
+                    
+                    // Keep moths near ground
+                    if (positions[i*3+1] > 8) positions[i*3+1] -= 0.2;
+                    if (positions[i*3+1] < 1) positions[i*3+1] += 0.2;
+                    
+                    rotations[i*3] += (Math.random()-0.5)*0.8;
+                    rotations[i*3+1] += (Math.random()-0.5)*0.8;
                 }
                 dummy.position.set(positions[i*3], positions[i*3+1], positions[i*3+2]);
                 dummy.rotation.set(rotations[i*3], rotations[i*3+1], rotations[i*3+2]);
@@ -595,7 +1075,8 @@ export function setupBiomeSphere(): LoopController | null {
     };
 
     // Spawn Debris for each biome
-    buildDebris(new PlaneGeometry(0.6, 0.6), 200, { color: 0x5effa4, side: DoubleSide }, 0, 'leaf'); // Forest
+    const leafTex = createProceduralLeafTexture();
+    buildDebris(new PlaneGeometry(0.8, 0.8), 200, { map: leafTex, color: 0xffffff, side: DoubleSide, transparent: true, alphaTest: 0.1 }, 0, 'leaf'); // Forest
     buildDebris(new IcosahedronGeometry(0.8, 0), 100, { color: 0xffaa44, wireframe: true }, -300, 'tumble'); // Canyon
     buildDebris(new PlaneGeometry(0.8, 1.2), 150, { color: 0xaaaabb, side: DoubleSide }, -600, 'paper'); // City
     buildDebris(new ConeGeometry(0.2, 0.4, 3), 300, { color: 0xffffaa }, -900, 'moth'); // Savanna
@@ -710,7 +1191,8 @@ export function setupBiomeSphere(): LoopController | null {
         const radii = [3, 2.2, 1.5];
         let y = 0;
         for (let i = 0; i < 3; i++) {
-            const geo = new CylinderGeometry(radii[i], radii[i]*1.2, heights[i], 6);
+            const geo = new CylinderGeometry(radii[i], radii[i]*1.2, heights[i], 12, 4);
+            displaceGeometry(geo, 0.4, 1.5);
             geo.translate(0, y + heights[i]/2, 0);
             const mesh = new Mesh(geo);
             mesh.userData.isRock = true;
@@ -722,7 +1204,8 @@ export function setupBiomeSphere(): LoopController | null {
 
     function createProceduralArch(): Group {
         const group = new Group();
-        const geo = new TorusGeometry(5, 1.5, 4, 6, Math.PI);
+        const geo = new TorusGeometry(5, 1.5, 12, 16, Math.PI);
+        displaceGeometry(geo, 0.5, 1.2);
         geo.translate(0, 0, 0);
         const mesh = new Mesh(geo);
         mesh.userData.isRock = true;
@@ -846,22 +1329,55 @@ export function setupBiomeSphere(): LoopController | null {
     }
 
     biomes.forEach((biome, index) => {
-        // PROCEDURAL GROUND GRID (With Tron scan effect)
-        const geo = new PlaneGeometry(180, 180, 128, 128); // Larger grid
+        const startMatIndex = trackMaterials.length;
+        const startMeshIndex = trackGroup.children.length;
+
+        // PROCEDURAL GROUND GRID (Physical Textures)
+        // Endless grid to prevent seeing the edge of the world
+        const geo = new PlaneGeometry(800, 4500, 64, 128); 
         geo.rotateX(-Math.PI / 2);
         
-        const mat = createNonEuclideanMaterial({ 
-            color: biome.color, roughness: 0.8, metalness: 0.2, wireframe: true 
-        });
-        mat.transparent = true;
+        let diffuseCanvas: HTMLCanvasElement | null = null;
+        let diffuseTex: CanvasTexture | null = null;
         
-        // Add the glowing tron scan effect exclusively to the ground!
-        applyShaderScanEffect(mat);
+        if (biome.name === 'Forest') {
+            diffuseTex = createForestGround();
+        } else if (biome.name === 'Canyon') {
+            diffuseTex = createCanyonGround();
+        } else if (biome.name === 'City') {
+            diffuseTex = createCityGround();
+        } else if (biome.name === 'Savanna') {
+            diffuseTex = createSavannaGround();
+        }
+        
+        let matProps: any = { 
+            color: 0xffffff, roughness: 1.0, metalness: 0.1, wireframe: false 
+        };
+        
+        if (diffuseTex) {
+            diffuseCanvas = diffuseTex.image;
+            const maps = generateMapsFromDiffuse(diffuseCanvas);
+            
+            diffuseTex.repeat.set(8, 8);
+            maps.normalMap.repeat.set(8, 8);
+            maps.bumpMap.repeat.set(8, 8);
+            
+            matProps.map = diffuseTex;
+            matProps.normalMap = maps.normalMap;
+            matProps.roughnessMap = maps.bumpMap;
+            matProps.bumpMap = maps.bumpMap;
+            matProps.bumpScale = 0.5;
+        }
+        
+        const mat = createNonEuclideanMaterial(matProps);
+        mat.transparent = true;
         
         trackMaterials.push(mat);
         
         const mesh = new Mesh(geo, mat);
         mesh.position.z = -(index * BIOME_SPACING);
+        mesh.receiveShadow = true;
+        mesh.userData.isGround = true; // Exempt from Z-culling (this mesh spans 4500 units)
         trackGroup.add(mesh);
 
 
@@ -871,7 +1387,7 @@ export function setupBiomeSphere(): LoopController | null {
             const baseDeciduous = createProceduralDeciduousTree();
             const baseBush = createProceduralBush();
             // Dense Golden Grass Instancing
-            const grassCount = 12000;
+            const grassCount = 20000;
             const grassGeo = new ConeGeometry(0.15, 2, 3);
             grassGeo.translate(0, 1, 0);
             const grassMat = new MeshStandardMaterial({ color: 0xcca844, roughness: 1.0, transparent: true, opacity: 0 });
@@ -880,10 +1396,11 @@ export function setupBiomeSphere(): LoopController | null {
             applyWindSway(grassMat);
             trackMaterials.push(grassMat);
             const grassInst = new InstancedMesh(grassGeo, grassMat, grassCount);
+            grassInst.castShadow = true; grassInst.receiveShadow = true;
             const grassDummy = new Object3D();
             for (let i=0; i<grassCount; i++) {
-                const gx = (Math.random()-0.5)*180;
-                const gz = (Math.random()-0.5)*180;
+                const gx = (Math.random()-0.5)*500;
+                const gz = (Math.random()-0.5)*1400;
                 grassDummy.position.set(gx, 0, gz);
                 grassDummy.rotation.y = Math.random() * Math.PI;
                 grassDummy.rotation.x = (Math.random()-0.5)*0.2;
@@ -899,13 +1416,13 @@ export function setupBiomeSphere(): LoopController | null {
             const baseMushroom = createProceduralMushroom();
             
             // Dense forest with a small central winding path
-            for (let x = -100; x <= 100; x += 10) {
-                for (let z = -100; z <= 100; z += 10) {
-                    const pathCurve = Math.sin(z * 0.05) * 20;
+            for (let x = -200; x <= 200; x += 20) {
+                for (let z = -600; z <= 600; z += 20) {
+                    const pathCurve = Math.sin(z * 0.02) * 30;
                     const distToPath = Math.abs(x - pathCurve);
                     
                     if (distToPath < 10) continue; 
-                    if (Math.random() > 0.4) continue; // Adjust density
+                    if (Math.random() > 0.5) continue; // Adjust density
 
                     const r = Math.random();
                     let tile: Group;
@@ -981,13 +1498,13 @@ export function setupBiomeSphere(): LoopController | null {
             const baseArch = createProceduralArch();
             const baseRock = createProceduralRock();
             
-            for (let x = -100; x <= 100; x += 15) {
-                for (let z = -100; z <= 100; z += 15) {
-                    const pathCurve = Math.sin(z * 0.05) * 20;
+            for (let x = -200; x <= 200; x += 25) {
+                for (let z = -600; z <= 600; z += 25) {
+                    const pathCurve = Math.sin(z * 0.02) * 20;
                     const distToPath = Math.abs(x - pathCurve);
                     
                     if (distToPath < 12) continue; 
-                    if (Math.random() > 0.4) continue; 
+                    if (Math.random() > 0.45) continue;
 
                     const r = Math.random();
                     let tile: Group;
@@ -1020,12 +1537,12 @@ export function setupBiomeSphere(): LoopController | null {
             const baseMansion = createProceduralMansion();
             const baseFence = createProceduralFence();
 
-            for (let row = -6; row <= 6; row++) {
-                for (const isLeft of [true, false]) {
-                    if (row === 0) continue; // Leave center clearing
+            for (let row = -40; row <= 40; row++) {
+                for (let colOffset of [-180, -120, -70, -35, 35, 70, 120, 180]) {
+                    if (row === 0 && Math.abs(colOffset) < 100) continue; // Leave central clearing near origin
                     
-                    const x = isLeft ? -35 : 35;
-                    const z = row * 16 + (Math.random()-0.5)*2; // strict row spacing
+                    const x = colOffset + (Math.random()-0.5)*10;
+                    const z = row * 20 + (Math.random()-0.5)*4; // strict row spacing
                     
                     const rand = Math.random();
                     let tile: Group;
@@ -1051,7 +1568,7 @@ export function setupBiomeSphere(): LoopController | null {
                                 transparent: true, 
                                 opacity: 0, 
                                 depthWrite: true,
-                                map: isBuilding ? facadeTexture : null
+                                map: isBuilding ? facadeMaps.diffuseMap : null, emissiveMap: isBuilding ? facadeMaps.emissiveMap : null, emissive: isBuilding ? new Color(0xffaa55) : new Color(0x000000), emissiveIntensity: isBuilding ? 0.8 : 0
                             });
                             coreMat.userData = { baseOpacity: 1.0 };
                             applyNonEuclideanCurve(coreMat);
@@ -1062,8 +1579,8 @@ export function setupBiomeSphere(): LoopController | null {
                     });
 
                     tile.position.set(x, 0, -(index * BIOME_SPACING) + z);
-                    // Point houses toward the street
-                    tile.rotation.y = isLeft ? Math.PI/2 : -Math.PI/2; 
+                    // Point houses toward the street roughly
+                    tile.rotation.y = colOffset < 0 ? Math.PI/2 : -Math.PI/2; 
                     
                     const scale = 1.2 + Math.random()*0.2;
                     tile.scale.set(scale, scale, scale);
@@ -1075,7 +1592,7 @@ export function setupBiomeSphere(): LoopController | null {
             const baseBaobab = createProceduralBaobab();
             const baseBush = createProceduralBush();
             // Dense Golden Grass Instancing
-            const grassCount = 12000;
+            const grassCount = 18000;
             const grassGeo = new ConeGeometry(0.15, 2, 3);
             grassGeo.translate(0, 1, 0);
             const grassMat = new MeshStandardMaterial({ color: 0xcca844, roughness: 1.0, transparent: true, opacity: 0 });
@@ -1084,10 +1601,11 @@ export function setupBiomeSphere(): LoopController | null {
             applyWindSway(grassMat);
             trackMaterials.push(grassMat);
             const grassInst = new InstancedMesh(grassGeo, grassMat, grassCount);
+            grassInst.castShadow = true; grassInst.receiveShadow = true;
             const grassDummy = new Object3D();
             for (let i=0; i<grassCount; i++) {
-                const gx = (Math.random()-0.5)*180;
-                const gz = (Math.random()-0.5)*180;
+                const gx = (Math.random()-0.5)*500;
+                const gz = (Math.random()-0.5)*1400;
                 grassDummy.position.set(gx, 0, gz);
                 grassDummy.rotation.y = Math.random() * Math.PI;
                 grassDummy.rotation.x = (Math.random()-0.5)*0.2;
@@ -1099,9 +1617,9 @@ export function setupBiomeSphere(): LoopController | null {
             trackGroup.add(grassInst);
 
 
-            for (let i = 0; i < 15; i++) {
-                const x = (Math.random() - 0.5) * 160;
-                const z = (Math.random() - 0.5) * 160;
+            for (let i = 0; i < 120; i++) {
+                const x = (Math.random() - 0.5) * 500;
+                const z = (Math.random() - 0.5) * 1200;
                 
                 if (Math.abs(x) > 10 || Math.abs(z) > 10) {
                     const rand = Math.random();
@@ -1148,10 +1666,22 @@ export function setupBiomeSphere(): LoopController | null {
                 }
             }
         }
+
+        // Tag all materials in this biome and disable frustum culling for its meshes
+        for (let i = startMatIndex; i < trackMaterials.length; i++) {
+            if (!trackMaterials[i].userData) trackMaterials[i].userData = {};
+            trackMaterials[i].userData.biomeIndex = index;
+        }
+        for (let i = startMeshIndex; i < trackGroup.children.length; i++) {
+            trackGroup.children[i].traverse((child) => {
+                child.frustumCulled = false;
+            });
+        }
     });
     const TRACK_TRAVEL_DISTANCE = BIOME_SPACING * (biomes.length - 1);
 
-    scene.add(new AmbientLight(0xffffff, 2.2));
+    const ambientLight = new AmbientLight(0xffffff, 2.2);
+    scene.add(ambientLight);
     
 
 
@@ -1163,6 +1693,10 @@ export function setupBiomeSphere(): LoopController | null {
         const height = window.innerHeight;
         renderer.setSize(width, height, false);
         composer.setSize(width, height);
+        // bokehPass doesn't have setSize directly, its internal targets need updates if it was exposed, but usually rebuilding or leaving it is fine for BokehPass in some Three.js versions. We'll update its uniforms if possible.
+        if (bokehPass.renderTargetDepth) {
+            bokehPass.renderTargetDepth.setSize(width, height);
+        }
         camera.aspect = width / height;
         camera.updateProjectionMatrix();
         
@@ -1179,6 +1713,10 @@ export function setupBiomeSphere(): LoopController | null {
     let isDestroyed = false;
     let isRunning = false;
 
+    let targetFocus = 50.0;
+    let currentFocus = 50.0;
+    const centerPoint = new Vector2(0, 0);
+
     const tick = () => {
         if (!isRunning || isDestroyed) return;
         animationFrameId = requestAnimationFrame(tick);
@@ -1193,10 +1731,43 @@ export function setupBiomeSphere(): LoopController | null {
             targetWeather = states[Math.floor(Math.random() * states.length)];
             targetWeatherTint = weatherTints[targetWeather].color;
             targetFogMult = weatherTints[targetWeather].fogMult;
+            targetWetness = targetWeather === 'STORM' ? 1.0 : (targetWeather === 'OVERCAST' ? 0.3 : 0.0);
             console.log("Weather changed to:", targetWeather);
         }
         currentWeatherTint.lerp(targetWeatherTint, 0.005); // Smooth color blend
         currentFogMult = MathUtils.lerp(currentFogMult, targetFogMult, 0.005);
+        currentWetness = MathUtils.lerp(currentWetness, targetWetness, 0.002);
+        
+
+
+        // Auto-Focus Raycast
+        raycaster.setFromCamera(centerPoint, camera);
+        const focusIntersects = raycaster.intersectObjects(trackGroup.children, true);
+        if (focusIntersects.length > 0) {
+            targetFocus = focusIntersects[0].distance;
+        } else {
+            targetFocus = 200.0; // Default infinity focus
+        }
+        
+        // Smooth transition (large falloff/subtle switch)
+        currentFocus = MathUtils.lerp(currentFocus, targetFocus, 0.05);
+        bokehPass.uniforms['focus'].value = currentFocus;
+
+        // Push wetness to materials
+        trackMaterials.forEach(mat => {
+            if (mat.userData && mat.userData.uWetness) {
+                mat.userData.uWetness.value = currentWetness;
+            }
+        });
+        
+        // Update Lens Flare direction
+        const camDir = new Vector3();
+        camera.getWorldDirection(camDir);
+        lensUniforms.uCamFwd.value.copy(camDir);
+        
+        const sunDir = new Vector3().copy(dirLight.position).normalize();
+        lensUniforms.uSunDir.value.copy(sunDir);
+
 
         // --- Lightning Logic ---
         if (targetWeather === 'STORM' && Math.random() < 0.005) { // 0.5% chance per frame in a storm
@@ -1204,6 +1775,26 @@ export function setupBiomeSphere(): LoopController | null {
         }
         lightningFlash = MathUtils.lerp(lightningFlash, 0, 0.1); // Quick fade out
 
+
+
+        // --- Z-based Visibility Culling ---
+        // The camera is at Z=0 looking down -Z.
+        // TrackGroup moves positively along Z as we scroll.
+        // Only render objects within a reasonable range of the camera.
+        // Ground planes are exempt — they're single huge meshes whose origin doesn't
+        // represent their visible extent.
+        const activeZ = trackGroup.position.z;
+        const cullFar = -BIOME_SPACING * 1.5;  // How far ahead (into -Z) to render
+        const cullBehind = 200;                 // How far behind (+Z) to render
+        trackGroup.children.forEach(child => {
+            if (child.userData.isGround) return; // Never cull ground planes
+            const worldZ = activeZ + child.position.z;
+            if (worldZ < cullFar || worldZ > cullBehind) {
+                child.visible = false;
+            } else {
+                child.visible = true;
+            }
+        });
 
         cursorUniforms.uTime.value = time / 1000;
         
@@ -1249,17 +1840,51 @@ export function setupBiomeSphere(): LoopController | null {
         const travelZ = travelProgress * TRACK_TRAVEL_DISTANCE;
         const travelX = renderedProgressX * MAX_X_TRAVEL_RANGE;
         
+        const entryEase = Math.pow(entryProgress, 6); // Steep curve: stays black much longer, reveals color only at the very end
+        const exitEase = Math.pow(exitProgress, 4);
+        const transitionBlackness = Math.max(entryEase, exitEase);
+        
         // Dynamic Biome Environment Lerping
         if (typeof biomeEnvs !== 'undefined' && scene.fog) {
             const progress = travelZ / BIOME_SPACING;
             const idx = Math.floor(progress);
             const f = progress - idx;
             
-            const c0 = biomeEnvs[MathUtils.clamp(idx, 0, 3)];
-            const c1 = biomeEnvs[MathUtils.clamp(idx + 1, 0, 3)];
+            // Calculate dissolve state and true blackness gap
+            // Everything (ground, models, horizon) dissolves together.
+            // Out (0.35 -> 0.45), Black (0.45 -> 0.55), In (0.55 -> 0.65).
+            let dissolveState = 0.0;
+            if (f >= 0.35 && f <= 0.45) {
+                dissolveState = (f - 0.35) / 0.1; // Morph out
+            } else if (f > 0.45 && f < 0.55) {
+                dissolveState = 1.0; // True Black dead zone
+            } else if (f >= 0.55 && f <= 0.65) {
+                dissolveState = 1.0 - (f - 0.55) / 0.1; // Morph in
+            }
+
+            const clampIdx = MathUtils.clamp(idx, 0, 3);
+            const clampNext = MathUtils.clamp(idx + 1, 0, 3);
             
-            // Apply standard biome fog
-            const fogColor = new Color(c0.fog).lerp(new Color(c1.fog), f);
+            const c0 = biomeEnvs[clampIdx];
+            const c1 = biomeEnvs[clampNext];
+            
+            // Apply standard biome fog, but lerp to true black during the dead zone
+            const baseFog = new Color(c0.fog).lerp(new Color(c1.fog), f);
+            const trueBlack = new Color(0x000000);
+            const fogColor = baseFog.lerp(trueBlack, dissolveState);
+            
+            if (scene.background instanceof Color) {
+                scene.background.copy(fogColor);
+            } else {
+                scene.background = fogColor.clone();
+            }
+
+            // --- Horizon Uniforms Update ---
+            horizonMaterial.uniforms.tDiffuseCurrent.value = horizonTextures[clampIdx];
+            horizonMaterial.uniforms.tDiffuseNext.value = horizonTextures[clampNext];
+            horizonMaterial.uniforms.uProgress.value = f;
+            horizonMaterial.uniforms.uTime.value = time / 1000;
+            horizonMaterial.uniforms.uFogColor.value.copy(fogColor);
             // Apply global weather tint
             fogColor.multiply(currentWeatherTint);
             
@@ -1267,6 +1892,9 @@ export function setupBiomeSphere(): LoopController | null {
             if (lightningFlash > 0.05) {
                 fogColor.lerp(new Color(0xffffff), lightningFlash * 0.8);
             }
+            
+            // Fade to black on entry/exit
+            fogColor.lerp(new Color(0x000000), transitionBlackness);
 
             (scene.fog as FogExp2).color.copy(fogColor);
             scene.background = fogColor;
@@ -1277,34 +1905,47 @@ export function setupBiomeSphere(): LoopController | null {
             if (lightningFlash > 0.05) {
                 lightCol.lerp(new Color(0xffffff), lightningFlash);
             }
+            // Fade lights to black on entry/exit
+            lightCol.lerp(new Color(0x000000), transitionBlackness);
             dirLight.color.copy(lightCol);
-            dirLight.intensity = MathUtils.lerp(c0.intensity, c1.intensity, f) + (lightningFlash * 25.0);
+            
+            const baseIntensity = MathUtils.lerp(c0.intensity, c1.intensity, f) + (lightningFlash * 25.0);
+            dirLight.intensity = baseIntensity * (1.0 - transitionBlackness);
+            ambientLight.intensity = 2.2 * (1.0 - transitionBlackness);
         }
-
-        const entryEase = Math.pow(entryProgress, 3);
-        const exitEase = Math.pow(exitProgress, 4);
 
         let targetCamY = 5;
         let targetCamZ = 10;
         let targetFOV = 45;
 
         if (entryProgress > 0) {
-            targetCamY = MathUtils.lerp(5, 2.0, entryEase);
-            targetCamZ = MathUtils.lerp(10, 2.0, entryEase); 
-            targetFOV = MathUtils.lerp(45, 65, entryEase); 
+            // Skydive Entry: Drop down from the sky (Y=100) into the biome
+            targetCamY = MathUtils.lerp(5, 100.0, entryEase);
+            targetCamZ = MathUtils.lerp(10, 30.0, entryEase); 
+            targetFOV = MathUtils.lerp(45, 90, entryEase); 
         } else if (exitProgress > 0) {
-            targetCamY = MathUtils.lerp(5, 0, exitEase);
-            targetCamZ = 10;
-            targetFOV = MathUtils.lerp(45, 120, exitEase);
+            // Warp Speed Exit: Drop low and push FOV to simulate lightspeed before the flash
+            targetCamY = MathUtils.lerp(5, 0.5, exitEase);
+            targetCamZ = MathUtils.lerp(10, 20.0, exitEase);
+            targetFOV = MathUtils.lerp(45, 160, exitEase);
         }
 
         const parallaxX = mouseNDC.x * 2.0;
         const parallaxY = mouseNDC.y * 1.2;
 
         camera.position.set(travelX + parallaxX, targetCamY + parallaxY, targetCamZ);
+        
+        // Add extreme camera shake during exit warp
+        if (exitProgress > 0.5) {
+            const shake = (exitProgress - 0.5) * 2.0;
+            camera.position.x += (Math.random() - 0.5) * shake * 2.0;
+            camera.position.y += (Math.random() - 0.5) * shake * 2.0;
+        }
+        
         camera.fov = targetFOV;
         
-        const dynamicTarget = _cameraTarget.clone().add(new Vector3(travelX + parallaxX * 0.5, parallaxY * 0.5, 0));
+        // Dynamically tilt the camera up slightly on entry to see the horizon
+        const dynamicTarget = _cameraTarget.clone().add(new Vector3(travelX + parallaxX * 0.5, parallaxY * 0.5 + (entryEase * 20.0), 0));
         camera.lookAt(dynamicTarget);
         camera.updateProjectionMatrix();
         
@@ -1329,13 +1970,39 @@ export function setupBiomeSphere(): LoopController | null {
         cursorLight.position.lerp(targetLightPos, 0.2);
         cursorUniforms.uCursorPos.value.copy(cursorLight.position);
 
-        trackGroup.position.z = MathUtils.lerp(travelZ, _cameraTarget.z, exitEase);
-        trackGroup.scale.setScalar(MathUtils.lerp(1, 0.0001, exitEase));
+        // During warp exit, push the world towards the camera incredibly fast
+        trackGroup.position.z = MathUtils.lerp(travelZ, travelZ + 500, exitEase);
+        trackGroup.scale.setScalar(MathUtils.lerp(1, 0.01, exitEase));
 
         const dissolveOpacity = 1 - MathUtils.clamp((exitProgress - 0.7) / 0.3, 0, 1);
+        
+        // Calculate the same dissolve state to pass to NonEuclidean materials
+        const globalProgress = travelZ / BIOME_SPACING;
+        const currentIdx = Math.floor(globalProgress);
+        const globalF = globalProgress - currentIdx;
+
         for (const mat of trackMaterials) {
             const baseCap = mat.userData?.baseOpacity ?? 1.0;
             mat.opacity = dissolveOpacity * (1 - entryEase) * baseCap;
+            
+            if (mat.userData && mat.userData.uMorphState) {
+                const matBiome = mat.userData.biomeIndex;
+                let morphState = 1.0; // Default fully invisible
+                
+                if (matBiome === currentIdx) {
+                    // Current biome morphs out
+                    if (globalF < 0.35) morphState = 0.0;
+                    else if (globalF <= 0.45) morphState = (globalF - 0.35) / 0.1;
+                    else morphState = 1.0;
+                } else if (matBiome === currentIdx + 1) {
+                    // Next biome morphs in
+                    if (globalF < 0.55) morphState = 1.0;
+                    else if (globalF <= 0.65) morphState = 1.0 - (globalF - 0.55) / 0.1;
+                    else morphState = 0.0;
+                }
+
+                mat.userData.uMorphState.value = morphState;
+            }
         }
 
         const apparitionMaterial = apparitionSprite.material as SpriteMaterial;
@@ -1376,6 +2043,21 @@ export function setupBiomeSphere(): LoopController | null {
             apparitionMaterial.opacity = 0;
         }
         
+        // --- CRT Shutdown Effect (final biome exit only) ---
+        // The last biome is index 3 (Savanna). When the global exit animation kicks in,
+        // we want the CRT shutdown effect instead of the normal warp.
+        const isLastBiome = (currentIdx >= 3);
+        if (isLastBiome && exitProgress > 0) {
+            // Map exitProgress to a smooth 0->1 CRT shutdown curve
+            const shutdownProgress = MathUtils.clamp(exitProgress / 0.95, 0, 1);
+            crtShutdownPass.uniforms.uShutdown.value = shutdownProgress;
+        } else {
+            crtShutdownPass.uniforms.uShutdown.value = 0.0;
+        }
+
+        // --- Fade-from-black overlay (covers EVERYTHING) ---
+        fadeBlackPass.uniforms.uBlackness.value = transitionBlackness;
+
         composer.render();
     };
 
@@ -1416,17 +2098,49 @@ export function setupBiomeSphere(): LoopController | null {
         barkTexture.dispose();
         foliageTexture.dispose();
 
+        horizonTextures.forEach(tex => tex.dispose());
+        horizonMaterial.dispose();
+        horizonGeo.dispose();
 
+        // Comprehensive Memory Cleanup
+        trackMaterials.forEach(mat => {
+            if ((mat as any).map) (mat as any).map.dispose();
+            if ((mat as any).normalMap) (mat as any).normalMap.dispose();
+            if ((mat as any).bumpMap) (mat as any).bumpMap.dispose();
+            if ((mat as any).roughnessMap) (mat as any).roughnessMap.dispose();
+            if ((mat as any).emissiveMap) (mat as any).emissiveMap.dispose();
+            mat.dispose();
+        });
+        
         trackGroup.traverse((child) => {
             if ((child as Mesh).isMesh) {
                 const mesh = child as Mesh;
-                mesh.geometry.dispose();
-                Array.isArray(mesh.material) ? mesh.material.forEach(m => m.dispose()) : mesh.material.dispose();
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) {
+                    if (Array.isArray(mesh.material)) {
+                        mesh.material.forEach(m => m.dispose());
+                    } else {
+                        mesh.material.dispose();
+                    }
+                }
             }
+        });
+        
+        if (lensPlane.material) {
+            (lensPlane.material as any).uniforms.uDirtMap.value.dispose();
+            (lensPlane.material as any).dispose();
+        }
+        if (lensPlane.geometry) lensPlane.geometry.dispose();
+        
+        composer.passes.forEach(pass => {
+            if ((pass as any).dispose) (pass as any).dispose();
         });
         
         composer.dispose();
         renderer.dispose();
+        
+        // Remove scene
+        scene.clear();
     };
 
     start();

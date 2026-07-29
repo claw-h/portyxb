@@ -278,17 +278,12 @@ import '../styles/ui.css';
 
 	document.addEventListener('DOMContentLoaded', () => {
 		let dreamInit = false;
-		let voidInit = false;
 		const lazyObserver = new IntersectionObserver((entries) => {
 			entries.forEach(entry => {
 				if (entry.isIntersecting) {
 					if (entry.target.classList.contains('dream-zone') && !dreamInit) {
 						dreamInit = true;
 						initDreamScene();
-					}
-					if (entry.target.classList.contains('void-zone') && !voidInit) {
-						voidInit = true;
-						initVoidScene();
 					}
 				}
 			});
