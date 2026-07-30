@@ -116,6 +116,7 @@ export class InstrumentPanel {
     private _detailHeight: number = 0;
     private _currentTitle: string = '';
     private _titleScrambleInterval: number | null = null;
+    private _lastActiveLabel: number = -1;
 
     constructor(config: PanelConfig) {
         this.id = config.id;

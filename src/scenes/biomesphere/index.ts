@@ -1,0 +1,401 @@
+import { WebGLRenderer, Scene, PerspectiveCamera, AmbientLight, DirectionalLight, Group, Color, FogExp2, Vector2, Vector3, PCFSoftShadowMap, Sprite, SpriteMaterial, CanvasTexture, AdditiveBlending, WebGLRenderTarget, HalfFloatType, MathUtils, Mesh } from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { BokehPass } from 'three/examples/jsm/postprocessing/BokehPass.js';
+
+import { BiomeState, BIOME_NAMES } from './BiomeState';
+import { setupBiomeInput } from './BiomeInput';
+import { populateBiomes } from './BiomePopulator';
+import { WeatherSystem } from './BiomeWeather';
+import { createDebrisSystem } from './BiomeDebris';
+import { FisheyeShader, CRTShutdownShader, FadeBlackShader } from './BiomeShaders';
+import { BiomeUI } from './BiomeUI';
+
+// Provide dummies to satisfy old index.astro imports
+let onScrollProgress: ((p: number) => void) | null = null;
+export function setBiomeScrollProgress(progress: number): void {
+    if (onScrollProgress) onScrollProgress(progress);
+}
+export function setBiomeHorizontalProgress(progress: number): void {}
+
+export function setupBiomeSphere() {
+    const canvas = document.querySelector<HTMLCanvasElement>('[data-biome-canvas]');
+    if (!canvas) return null;
+
+    const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = PCFSoftShadowMap;
+
+    const scene = new Scene();
+    const envColor = new Color(0x04060f); 
+    scene.background = envColor;
+    scene.fog = new FogExp2(0x04060f, 0.012);
+
+    const camera = new PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    scene.add(camera);
+
+    const timeUniforms = { uTime: { value: 0 } };
+
+    const trackGroup = new Group();
+    scene.add(trackGroup);
+
+    const trackMaterials: any[] = [];
+    const BIOME_SPACING = 1500;
+
+    populateBiomes(trackGroup, trackMaterials, BIOME_SPACING, timeUniforms);
+    const debrisSystem = createDebrisSystem(trackGroup, trackMaterials, BIOME_SPACING);
+    
+    const ui = new BiomeUI(canvas.parentElement || document.body);
+    const biomeState = new BiomeState();
+    const cleanupInput = setupBiomeInput(biomeState);
+    
+    biomeState.subscribe(() => {
+        ui.update(biomeState.currentIndex, BIOME_NAMES[biomeState.currentIndex]);
+    });
+
+    ui.update(biomeState.currentIndex, BIOME_NAMES[biomeState.currentIndex]);
+    ui.show();
+
+    const ambientLight = new AmbientLight(0xffffff, 2.2);
+    scene.add(ambientLight);
+    
+    const dirLight = new DirectionalLight(0xffffff, 0.0);
+    dirLight.position.set(100, 200, 50);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = 1024;
+    dirLight.shadow.mapSize.height = 1024;
+    dirLight.shadow.camera.near = 10;
+    dirLight.shadow.camera.far = 200;
+    dirLight.shadow.bias = -0.001;
+    scene.add(dirLight);
+
+    const weather = new WeatherSystem();
+
+    const renderTarget = new WebGLRenderTarget(
+        window.innerWidth * Math.min(window.devicePixelRatio, 1.5),
+        window.innerHeight * Math.min(window.devicePixelRatio, 1.5),
+        { type: HalfFloatType }
+    );
+
+    const composer = new EffectComposer(renderer, renderTarget);
+    composer.addPass(new RenderPass(scene, camera));
+    
+    const fisheyePass = new ShaderPass(FisheyeShader);
+    composer.addPass(fisheyePass);
+
+    const bokehPass = new BokehPass(scene, camera, { focus: 50.0, aperture: 0.0005, maxblur: 0.008 });
+    composer.addPass(bokehPass);
+
+    const crtShutdownPass = new ShaderPass(CRTShutdownShader);
+    composer.addPass(crtShutdownPass);
+
+    const fadeBlackPass = new ShaderPass(FadeBlackShader);
+    composer.addPass(fadeBlackPass);
+
+    let animationFrameId: number;
+    let isDestroyed = false;
+    let isRunning = false;
+    let lastTime = performance.now();
+
+    const mouseNDC = new Vector2(0, 0);       
+    const targetMouseNDC = new Vector2(0, 0); 
+
+    const onPointerMove = (e: MouseEvent) => {
+        targetMouseNDC.x = (e.clientX / window.innerWidth) * 2 - 1;
+        targetMouseNDC.y = -(e.clientY / window.innerHeight) * 2 + 1;
+    };
+    window.addEventListener('pointermove', onPointerMove);
+
+    const resize = () => {
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        renderer.setSize(width, height, false);
+        composer.setSize(width, height);
+        if (bokehPass.renderTargetDepth) {
+            bokehPass.renderTargetDepth.setSize(width, height);
+        }
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize', resize);
+    resize();
+
+    const apparitionSprite = (function createApparitionSprite(): Sprite {
+        const size = 256; 
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d')!;
+        const c = size / 2;
+
+        const glow = ctx.createRadialGradient(c, c, 0, c, c, c);
+        glow.addColorStop(0, 'rgba(255, 255, 255, 1)'); 
+        glow.addColorStop(0.04, 'rgba(200, 230, 255, 0.9)');  
+        glow.addColorStop(0.12, 'rgba(70, 130, 255, 0.4)'); 
+        glow.addColorStop(0.4, 'rgba(0, 50, 255, 0)'); 
+        ctx.fillStyle = glow; ctx.fillRect(0, 0, size, size);
+
+        ctx.save(); ctx.translate(c, c);
+        ctx.shadowColor = 'rgba(200, 230, 255, 1)'; ctx.shadowBlur = 12; ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+        for (let i = 0; i < 2; i++) {
+            ctx.save(); ctx.rotate(i * Math.PI / 2);
+            ctx.beginPath(); ctx.moveTo(0, -c * 0.95); ctx.lineTo(1.5, 0); ctx.lineTo(0, c * 0.95); ctx.lineTo(-1.5, 0);
+            ctx.closePath(); ctx.fill(); ctx.restore();
+        }
+        for (let i = 0; i < 2; i++) {
+            ctx.save(); ctx.rotate((Math.PI / 4) + (i * Math.PI / 2));
+            ctx.beginPath(); ctx.moveTo(0, -c * 0.35); ctx.lineTo(1, 0); ctx.lineTo(0, c * 0.35); ctx.lineTo(-1, 0);
+            ctx.closePath(); ctx.fill(); ctx.restore();
+        }
+        ctx.restore();
+
+        const texture = new CanvasTexture(canvas);
+        const material = new SpriteMaterial({ map: texture, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false, toneMapped: false });
+        const sprite = new Sprite(material);
+        sprite.position.set(0, 0, -10);
+        sprite.scale.setScalar(0.001);
+        return sprite;
+    })();
+    scene.add(apparitionSprite);
+    const apparitionMat = apparitionSprite.material as SpriteMaterial;
+
+    const biomeEnvs = [
+        { fog: 0x2f5035, density: 0.012, light: 0xaaddaa, intensity: 2.5 },
+        { fog: 0x6d4021, density: 0.015, light: 0xffcc44, intensity: 3.5 },
+        { fog: 0x1f253a, density: 0.016, light: 0x88aacc, intensity: 3.5 },
+        { fog: 0x7a6141, density: 0.012, light: 0xffeedd, intensity: 3.0 } 
+    ];
+
+    const tick = () => {
+        if (!isRunning || isDestroyed) return;
+        animationFrameId = requestAnimationFrame(tick);
+
+        const time = performance.now();
+        const deltaMs = time - lastTime;
+        lastTime = time;
+
+        timeUniforms.uTime.value = time / 1000;
+
+        weather.update(time);
+        biomeState.update(deltaMs / 1000);
+        debrisSystem.update();
+
+        mouseNDC.x = MathUtils.lerp(mouseNDC.x, targetMouseNDC.x, 0.05);
+        mouseNDC.y = MathUtils.lerp(mouseNDC.y, targetMouseNDC.y, 0.05);
+
+        let globalTravelZ = biomeState.currentIndex * BIOME_SPACING;
+        
+        let entryEase = 0;
+        let exitEase = 0;
+        let crtShutdown = 0;
+
+        if (biomeState.transitionPhase === 'EXIT') {
+            exitEase = Math.pow(biomeState.transitionProgress, 2);
+        } else if (biomeState.transitionPhase === 'ENTRY' || biomeState.transitionPhase === 'INITIAL_ENTRY') {
+            entryEase = Math.pow(1 - biomeState.transitionProgress, 2);
+        } else if (biomeState.transitionPhase === 'FINAL_EXIT') {
+            crtShutdown = MathUtils.clamp(biomeState.transitionProgress / 0.95, 0, 1);
+        }
+
+        let transitionBlackness = Math.min(1.0, Math.max(entryEase, exitEase) * 1.2);
+        if (isFirstStart) {
+            transitionBlackness = 1.0;
+        } else if (biomeState.transitionPhase === 'FINAL_EXIT') {
+            transitionBlackness = crtShutdown;
+        }
+
+        let morphState = 0;
+        if (biomeState.transitionPhase === 'EXIT') {
+            morphState = biomeState.transitionProgress;
+        } else if (biomeState.transitionPhase === 'ENTRY') {
+            morphState = 1.0 - biomeState.transitionProgress;
+        } else if (biomeState.transitionPhase === 'FINAL_EXIT') {
+            morphState = crtShutdown;
+        }
+
+        if (biomeState.transitionPhase === 'EXIT' && biomeState.transitionProgress > 0.9) {
+            const p = (biomeState.transitionProgress - 0.9) / 0.1;
+            apparitionMat.opacity = Math.sin(p * Math.PI) * 4.0;
+            apparitionSprite.scale.setScalar(MathUtils.lerp(0.001, 3.5, p));
+            apparitionMat.rotation = p * (Math.PI / 2);
+        } else {
+            apparitionMat.opacity = 0;
+            apparitionSprite.scale.setScalar(0.001);
+        }
+
+        const c0 = biomeEnvs[biomeState.currentIndex];
+        
+        const baseFog = new Color(c0.fog);
+        const fogColor = baseFog.clone().multiply(weather.currentWeatherTint);
+        if (weather.lightningFlash > 0.05) {
+            fogColor.lerp(new Color(0xffffff), weather.lightningFlash * 0.8);
+        }
+        fogColor.lerp(new Color(0x000000), transitionBlackness);
+
+        if (scene.background instanceof Color) scene.background.copy(fogColor);
+        else scene.background = fogColor;
+        (scene.fog as FogExp2).color.copy(fogColor);
+        (scene.fog as FogExp2).density = c0.density * weather.currentFogMult;
+
+        const lightCol = new Color(c0.light).multiply(weather.currentWeatherTint);
+        if (weather.lightningFlash > 0.05) lightCol.lerp(new Color(0xffffff), weather.lightningFlash);
+        lightCol.lerp(new Color(0x000000), transitionBlackness);
+        dirLight.color.copy(lightCol);
+        
+        const baseIntensity = c0.intensity + (weather.lightningFlash * 25.0);
+        dirLight.intensity = baseIntensity * (1.0 - transitionBlackness);
+        ambientLight.intensity = 2.2 * (1.0 - transitionBlackness);
+
+        let targetCamY = 5;
+        let targetCamZ = 10;
+        let targetFOV = 45;
+
+        if (isFirstStart) {
+            targetCamY = 100;
+            targetCamZ = 30;
+            targetFOV = 90;
+        } else if (entryEase > 0) {
+            targetCamY = biomeState.transitionPhase === 'INITIAL_ENTRY' ? MathUtils.lerp(5, 100.0, entryEase) : 5; 
+            targetCamZ = MathUtils.lerp(10, 30.0, entryEase); 
+            targetFOV = MathUtils.lerp(45, 90, entryEase); 
+        } else if (exitEase > 0) {
+            targetCamY = 5; 
+            targetCamZ = MathUtils.lerp(10, 20.0, exitEase);
+            targetFOV = MathUtils.lerp(45, 160, exitEase);
+        }
+
+        const parallaxX = mouseNDC.x * 2.0;
+        const parallaxY = mouseNDC.y * 1.2;
+
+        ui.setGlitch(transitionBlackness);
+        ui.updateParallax(parallaxX, parallaxY);
+
+        camera.position.set(parallaxX, targetCamY + parallaxY, targetCamZ);
+        if (exitEase > 0.5) {
+            const shake = (exitEase - 0.5) * 2.0;
+            camera.position.x += (Math.random() - 0.5) * shake * 2.0;
+            camera.position.y += (Math.random() - 0.5) * shake * 2.0;
+        }
+        camera.fov = targetFOV;
+        
+        const dynamicTarget = new Vector3(parallaxX * 0.5, parallaxY * 0.5 + (entryEase * 20.0), -10);
+        camera.lookAt(dynamicTarget);
+        camera.updateProjectionMatrix();
+
+        let scale = 1.0;
+        if (exitEase > 0) scale = MathUtils.lerp(1, 0.01, exitEase);
+        
+        let zOffset = 0;
+        if (exitEase > 0) {
+            zOffset = MathUtils.lerp(0, 500 * biomeState.direction, exitEase);
+        } else if (entryEase > 0) {
+            zOffset = MathUtils.lerp(0, -500 * biomeState.direction, entryEase);
+        }
+        
+        trackGroup.position.z = zOffset + scale * globalTravelZ;
+        trackGroup.scale.setScalar(scale);
+
+        const activeZ = trackGroup.position.z;
+        const currentScale = trackGroup.scale.z;
+        const cullFar = -BIOME_SPACING * 1.5;
+        const cullBehind = 200;
+        trackGroup.children.forEach(child => {
+            if (child.userData.isGround) return;
+            const worldZ = activeZ + child.position.z * currentScale;
+            if (worldZ < cullFar || worldZ > cullBehind) child.visible = false;
+            else child.visible = true;
+        });
+
+        const dissolveOpacity = 1 - MathUtils.clamp((biomeState.transitionProgress - 0.7) / 0.3, 0, 1);
+        
+        trackMaterials.forEach(mat => {
+            const baseCap = mat.userData?.baseOpacity ?? 1.0;
+
+            if (mat.userData && mat.userData.uWetness) {
+                mat.userData.uWetness.value = weather.currentWetness;
+            }
+
+            if (biomeState.transitionPhase === 'EXIT') {
+                mat.opacity = dissolveOpacity * baseCap;
+            } else if (biomeState.transitionPhase === 'ENTRY') {
+                mat.opacity = (1 - entryEase) * baseCap;
+            } else {
+                mat.opacity = baseCap;
+            }
+
+            if (mat.userData && mat.userData.uMorphState) {
+                mat.userData.uMorphState.value = morphState;
+            }
+        });
+
+        fadeBlackPass.uniforms.uBlackness.value = transitionBlackness;
+        crtShutdownPass.uniforms.uShutdown.value = crtShutdown;
+
+        composer.render();
+    };
+
+    let isFirstStart = true;
+    onScrollProgress = (p: number) => {
+        if (p >= 0.0 && isFirstStart) {
+            isFirstStart = false;
+            biomeState.currentIndex = 0;
+            biomeState.targetIndex = 0;
+            biomeState.startInitialEntry();
+        }
+    };
+
+    const start = () => {
+        if (isRunning) return;
+        isRunning = true;
+        
+        if (!isFirstStart && !biomeState.isTransitioning) {
+            biomeState.currentIndex = 0;
+            biomeState.targetIndex = 0;
+            biomeState.transitionPhase = 'IDLE';
+        }
+        
+        ui.update(0, BIOME_NAMES[0]);
+        ui.show();
+        
+        lastTime = performance.now();
+        tick();
+    };
+
+    const stop = () => {
+        isRunning = false;
+        if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+
+    const destroy = () => {
+        isDestroyed = true;
+        stop();
+        cleanupInput();
+        ui.destroy();
+        window.removeEventListener('resize', resize);
+        window.removeEventListener('pointermove', onPointerMove);
+        trackMaterials.forEach(mat => {
+            if (mat.map) mat.map.dispose();
+            mat.dispose();
+        });
+        trackGroup.traverse((child) => {
+            if ((child as Mesh).geometry) (child as Mesh).geometry.dispose();
+            if ((child as Mesh).material) {
+                if (Array.isArray((child as Mesh).material)) ((child as Mesh).material as any[]).forEach(m => m.dispose());
+                else ((child as Mesh).material as any).dispose();
+            }
+        });
+        composer.dispose();
+        renderer.dispose();
+        scene.clear();
+    };
+
+    const observer = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) start();
+        else stop();
+    }, { threshold: 0.0 });
+    observer.observe(canvas);
+
+    return { start, stop, destroy: () => { observer.disconnect(); destroy(); }, resize };
+}

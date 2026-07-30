@@ -133,13 +133,13 @@ async function loadAndProcess(url: string, sliceCount: number) {
 	}
 
 	const transferables: ArrayBuffer[] = [];
-	slicedPositions.forEach(b => transferables.push(b.buffer));
-	slicedNormals.forEach(b => transferables.push(b.buffer));
-	slicedEdges.forEach(b => transferables.push(b.buffer));
+	slicedPositions.forEach(b => transferables.push(b.buffer as ArrayBuffer));
+	slicedNormals.forEach(b => transferables.push(b.buffer as ArrayBuffer));
+	slicedEdges.forEach(b => transferables.push(b.buffer as ArrayBuffer));
 	
 	solidBuffers.forEach(s => {
-		transferables.push(s.position.buffer);
-		transferables.push(s.normal.buffer);
+		transferables.push(s.position.buffer as ArrayBuffer);
+		transferables.push(s.normal.buffer as ArrayBuffer);
 	});
 
 	(self as unknown as Worker).postMessage(

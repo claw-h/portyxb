@@ -72,14 +72,8 @@ export function applyNonEuclideanCurve(material: Material, extrusionFactor = 0.0
 
             // 2D Noise
             float noiseMorph(in vec2 st) {
-                vec2 i = floor(st);
-                vec2 f = fract(st);
-                float a = randomMorph(i);
-                float b = randomMorph(i + vec2(1.0, 0.0));
-                float c = randomMorph(i + vec2(0.0, 1.0));
-                float d = randomMorph(i + vec2(1.0, 1.0));
-                vec2 u = f*f*(3.0-2.0*f);
-                return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                // Optimized fast blocky noise for 60fps data morph effect
+                return randomMorph(floor(st * 2.0));
             }
             `
         );
@@ -90,13 +84,12 @@ export function applyNonEuclideanCurve(material: Material, extrusionFactor = 0.0
             #include <dithering_fragment>
             if (uMorphState > 0.0) {
                 float n = noiseMorph(vPlaneCoord * 0.5);
-                // Discard pixels that fall below the morph state threshold
                 if (n < uMorphState) {
                     discard;
                 }
-                // Add glowing edges
                 float sparkEdge = smoothstep(uMorphState, uMorphState + 0.1, n) - smoothstep(uMorphState + 0.05, uMorphState + 0.15, n);
-                gl_FragColor.rgb += vec3(0.1, 0.8, 1.0) * sparkEdge * 3.0;
+                float glowFade = smoothstep(0.0, 0.1, uMorphState);
+                gl_FragColor.rgb += vec3(0.1, 0.8, 1.0) * sparkEdge * 3.0 * glowFade;
             }
             `
         );
@@ -197,14 +190,8 @@ export function createNonEuclideanMaterial(parameters: MeshStandardMaterialParam
 
             // 2D Noise
             float noiseMorph(in vec2 st) {
-                vec2 i = floor(st);
-                vec2 f = fract(st);
-                float a = randomMorph(i);
-                float b = randomMorph(i + vec2(1.0, 0.0));
-                float c = randomMorph(i + vec2(0.0, 1.0));
-                float d = randomMorph(i + vec2(1.0, 1.0));
-                vec2 u = f*f*(3.0-2.0*f);
-                return mix(a, b, u.x) + (c - a)* u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+                // Optimized fast blocky noise for 60fps data morph effect
+                return randomMorph(floor(st * 2.0));
             }
             `
         );
@@ -236,13 +223,12 @@ export function createNonEuclideanMaterial(parameters: MeshStandardMaterialParam
             #include <dithering_fragment>
             if (uMorphState > 0.0) {
                 float n = noiseMorph(vPlaneCoord * 0.5);
-                // Discard pixels that fall below the morph state threshold
                 if (n < uMorphState) {
                     discard;
                 }
-                // Add glowing edges
                 float sparkEdge = smoothstep(uMorphState, uMorphState + 0.1, n) - smoothstep(uMorphState + 0.05, uMorphState + 0.15, n);
-                gl_FragColor.rgb += vec3(0.1, 0.8, 1.0) * sparkEdge * 3.0;
+                float glowFade = smoothstep(0.0, 0.1, uMorphState);
+                gl_FragColor.rgb += vec3(0.1, 0.8, 1.0) * sparkEdge * 3.0 * glowFade;
             }
             `
         );
