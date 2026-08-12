@@ -1,0 +1,129 @@
+import * as THREE from 'three';
+import type { RingNode } from './rings';
+import { tweenManager, Easing } from '../../utils/animation';
+
+interface HoverState {
+    activeId: string | null;
+}
+
+export function setupHoverPreview(
+    camera: THREE.PerspectiveCamera,
+    rings: RingNode[],
+    domElement: HTMLElement
+) {
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    const state: HoverState = { activeId: null };
+
+    // DOM Elements for tether and label
+    const tetherLine = document.getElementById('vitruvian-tether-line') as SVGLineElement | null;
+    const labelDiv = document.getElementById('orb-sword-label') as HTMLDivElement | null;
+    const overlay = document.querySelector('.tether-overlay') as SVGSVGElement | null;
+
+    let isCascadeActive = false; // We'll set this to true when cascade happens
+
+    const updateHoverTweens = (hoveredId: string | null) => {
+        rings.forEach(ring => {
+            const isTarget = ring.id === hoveredId;
+            const isDimmed = hoveredId !== null && !isTarget;
+            
+            // Emissive & opacity target
+            const targetEmissive = isTarget ? 1.0 : (isDimmed ? 0.05 : 0.2);
+            const targetOpacity = isDimmed ? 0.4 : 0.8;
+
+            const startEmissive = (ring.material as THREE.MeshPhysicalMaterial).emissiveIntensity;
+            const startOpacity = ring.material.opacity;
+
+            // Simple tween object mapping
+            tweenManager.to({
+                from: 0,
+                to: 1,
+                duration: 250,
+                easing: Easing.easeOutCubic,
+                onUpdate: (t) => {
+                    if (isCascadeActive) return; // Halt if cascade took over
+                    (ring.material as THREE.MeshPhysicalMaterial).emissiveIntensity = startEmissive + (targetEmissive - startEmissive) * t;
+                    ring.material.opacity = startOpacity + (targetOpacity - startOpacity) * t;
+                }
+            });
+        });
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+        if (isCascadeActive) return;
+
+        const rect = domElement.getBoundingClientRect();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+
+        const hitboxes = rings.map(r => r.hitbox);
+        const intersects = raycaster.intersectObjects(hitboxes);
+
+        let hitId: string | null = null;
+        let hitRing: RingNode | null = null;
+        let hitPoint: THREE.Vector3 | null = null;
+
+        if (intersects.length > 0) {
+            hitId = intersects[0].object.userData.ringId;
+            hitRing = rings.find(r => r.id === hitId) || null;
+            hitPoint = intersects[0].point;
+        }
+
+        if (hitId !== state.activeId) {
+            state.activeId = hitId;
+            updateHoverTweens(hitId);
+
+            if (hitId && hitRing && tetherLine && labelDiv) {
+                // Show tether & label
+                tetherLine.classList.add('is-visible');
+                labelDiv.style.opacity = '1';
+                labelDiv.innerText = hitRing.category.label;
+            } else if (!hitId && tetherLine && labelDiv) {
+                // Hide
+                tetherLine.classList.remove('is-visible');
+                labelDiv.style.opacity = '0';
+            }
+        }
+
+        // Update tether & label position every frame we move while hovered
+        if (state.activeId && hitPoint && hitRing && overlay && tetherLine && labelDiv) {
+            // Project 3D point to 2D screen space
+            const screenPos = hitPoint.clone().project(camera);
+            const overlayRect = overlay.getBoundingClientRect();
+            
+            const x2 = (screenPos.x * 0.5 + 0.5) * overlayRect.width;
+            const y2 = (-(screenPos.y * 0.5) + 0.5) * overlayRect.height;
+            
+            // Tether goes from cursor to the hit point on the sword
+            const x1 = event.clientX - rect.left;
+            const y1 = event.clientY - rect.top;
+
+            tetherLine.setAttribute('x1', String(x1));
+            tetherLine.setAttribute('y1', String(y1));
+            tetherLine.setAttribute('x2', String(x2));
+            tetherLine.setAttribute('y2', String(y2));
+
+            // Position label near the cursor
+            labelDiv.style.left = `${x1 + 20}px`;
+            labelDiv.style.top = `${y1 + 20}px`;
+        }
+    };
+
+    domElement.addEventListener('pointermove', onPointerMove);
+
+    return {
+        getState: () => state,
+        setCascadeActive: (val: boolean) => {
+            isCascadeActive = val;
+            if (val && tetherLine && labelDiv) {
+                tetherLine.classList.remove('is-visible');
+                labelDiv.style.opacity = '0';
+            }
+        },
+        dispose: () => {
+            domElement.removeEventListener('pointermove', onPointerMove);
+        }
+    };
+}

@@ -1,0 +1,213 @@
+import { PanelManager } from '../ui/telemetry/PanelManager';
+import webglFluid from 'webgl-fluid';
+
+interface LimbConfig {
+    label: string;
+    discipline: string;
+    title: string;
+}
+
+const LIMBS: LimbConfig[] = [
+    { label: 'RIGHT ARM', discipline: 'engineer', title: 'SUBJECT: ENGINEER' },
+    { label: 'LEFT ARM', discipline: 'writer', title: 'SUBJECT: WRITER' },
+    { label: 'RIGHT LEG', discipline: 'designer', title: 'SUBJECT: DESIGNER' },
+    { label: 'LEFT LEG', discipline: 'fool', title: 'SUBJECT: FOOL' }
+];
+
+export function setupVitruvianScene() {
+    const zone = document.querySelector('.vitruvian-zone');
+    const uiLayer = document.querySelector('#vitruvian-ui-layer');
+    if (!zone || !uiLayer) return null;
+
+    // Trigger compile animation
+    zone.classList.add('is-compiling');
+
+    const panelManager = new PanelManager(uiLayer as HTMLElement);
+    
+    // Register the single reusable telemetry panel
+    const panel = panelManager.registerPanel({
+        id: 'vitruvian-info',
+        title: 'SUBJECT: UNKNOWN',
+        eyebrow: 'VITRUVIAN DATA EXTRACT',
+        brand: 'ANIMUS',
+        model: 'SYNC 03',
+        channels: [
+            { id: 'sync', type: 'digital', label: 'SYNC RATE', format: (v) => `${v.toFixed(1)}%` },
+            { id: 'load', type: 'meter', label: 'COGNITIVE LOAD', min: 0, max: 100, majorStep: 20, redlineFrom: 80 }
+        ]
+    });
+
+    // Add sleek slide-in transition to the panel
+    if (panel.root) {
+        panel.root.style.transition = 'transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.4s ease';
+    }
+
+    const svg = zone.querySelector('.vitruvian-svg-wrapper svg');
+    const tetherOverlay = zone.querySelector('.tether-overlay') as SVGSVGElement;
+    const tetherLine = document.getElementById('vitruvian-tether-line') as SVGLineElement;
+    const fluidCanvas = document.getElementById('vitruvian-fluid-canvas') as HTMLCanvasElement;
+
+    if (fluidCanvas) {
+        webglFluid(fluidCanvas, {
+            IMMEDIATE: true,
+            TRIGGER: 'hover',
+            SIM_RESOLUTION: 64, // Heavily reduced for perf
+            DYE_RESOLUTION: 256, // Heavily reduced for perf
+            DENSITY_DISSIPATION: 3,
+            VELOCITY_DISSIPATION: 1.5,
+            PRESSURE: 0.1,
+            PRESSURE_ITERATIONS: 10,
+            CURL: 3,
+            SPLAT_RADIUS: 0.3,
+            SPLAT_FORCE: 6000,
+            SHADING: false, // Disabled for perf
+            COLORFUL: false, // Use neutral/blue theme
+            COLOR_UPDATE_SPEED: 0,
+            PAUSED: false,
+            BACK_COLOR: { r: 0, g: 0, b: 0 },
+            TRANSPARENT: false, // Ensure black background for multiply blending
+            BLOOM: false, // Disabled for perf
+            SUNRAYS: false, // Disabled for perf
+        });
+    }
+
+    if (!svg || !tetherOverlay || !tetherLine) return { destroy: () => panelManager.destroy() };
+
+    const cleanupFns: Array<() => void> = [];
+
+    // Subtle parallax effect and scanline tracking on mouse move
+    const wrapper = zone.querySelector('.vitruvian-svg-wrapper') as HTMLElement;
+    const crosshairX = zone.querySelector('.quadrant-crosshair-x') as HTMLElement;
+    const crosshairY = zone.querySelector('.quadrant-crosshair-y') as HTMLElement;
+    
+    const onMouseMove = (e: MouseEvent) => {
+        // Prevent infinite loop from forwarded events
+        if (e.target === fluidCanvas) return;
+
+        if (wrapper) {
+            const x = (e.clientX / window.innerWidth - 0.5) * 6; // subtle -3 to 3 deg
+            const y = (e.clientY / window.innerHeight - 0.5) * 6;
+            wrapper.style.transform = `perspective(1200px) rotateY(${x}deg) rotateX(${-y}deg) scale3d(1.02, 1.02, 1.02)`;
+        }
+        
+        if (crosshairX && crosshairY) {
+            // Tie crosshairs to cursor X and Y position
+            const zoneRect = zone.getBoundingClientRect();
+            const relativeX = e.clientX - zoneRect.left;
+            const relativeY = e.clientY - zoneRect.top;
+            crosshairX.style.transform = `translateY(${relativeY}px)`;
+            crosshairY.style.transform = `translateX(${relativeX}px)`;
+        }
+
+        // Forward mouse event to the fluid canvas since it has pointer-events: none
+        if (fluidCanvas) {
+            fluidCanvas.dispatchEvent(new MouseEvent('mousemove', {
+                clientX: e.clientX,
+                clientY: e.clientY,
+                bubbles: true,
+                cancelable: true
+            }));
+        }
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    cleanupFns.push(() => window.removeEventListener('mousemove', onMouseMove));
+
+    // Track active interval so we don't leak scrambles
+    let currentScrambleInterval: number | null = null;
+
+    LIMBS.forEach(config => {
+        // Find the group by inkscape:label
+        const el = svg.querySelector(`g[inkscape\\:label="${config.label}"]`) as SVGGElement | null;
+        if (!el) return;
+
+        el.classList.add('vitruvian-limb');
+        el.setAttribute('data-discipline', config.discipline);
+
+        const onEnter = (e: PointerEvent) => {
+            zone.classList.add('has-active-hover');
+            el.classList.add('is-hovered');
+
+            // Hardcode panel pos to the right side
+            const panelX = window.innerWidth * 0.65;
+            const panelY = window.innerHeight * 0.3;
+            
+            // Set initial off-screen/slide position instantly
+            panelManager.update('vitruvian-info', {
+                x: panelX + 30, // Start slightly right
+                y: panelY,
+                opacity: 0,
+                titleState0: 'SUBJECT: UNKNOWN',
+                titleState1: config.title,
+                titleProgress: 0
+            });
+
+            // Trigger actual layout and slide in next frame
+            requestAnimationFrame(() => {
+                panelManager.update('vitruvian-info', {
+                    x: panelX,
+                    opacity: 1
+                });
+            });
+
+            if (currentScrambleInterval) window.clearInterval(currentScrambleInterval);
+
+            let progress = 0;
+            currentScrambleInterval = window.setInterval(() => {
+                progress += 0.05;
+                if (progress >= 1) {
+                    window.clearInterval(currentScrambleInterval!);
+                    currentScrambleInterval = null;
+                }
+                panelManager.update('vitruvian-info', { titleProgress: Math.min(progress, 1) });
+            }, 30);
+
+            // Mock telemetry values
+            panelManager.update('vitruvian-info', {
+                values: {
+                    sync: Math.random() * 20 + 80,
+                    load: Math.random() * 40 + 40
+                }
+            });
+
+            // Set tether line coords relative to the overlay
+            const overlayRect = tetherOverlay.getBoundingClientRect();
+            const rect = el.getBoundingClientRect();
+            
+            tetherLine.setAttribute('x1', String(rect.left - overlayRect.left + rect.width / 2));
+            tetherLine.setAttribute('y1', String(rect.top - overlayRect.top + rect.height / 2));
+            tetherLine.setAttribute('x2', String(panelX - overlayRect.left - 10)); // Just slightly inside the panel's left edge
+            tetherLine.setAttribute('y2', String(panelY - overlayRect.top + 45)); // Near the header
+            tetherLine.classList.add('is-visible');
+        };
+
+        const onLeave = (e: PointerEvent) => {
+            zone.classList.remove('has-active-hover');
+            el.classList.remove('is-hovered');
+            tetherLine.classList.remove('is-visible');
+            panelManager.update('vitruvian-info', { opacity: 0 });
+        };
+
+        const onClick = (e: PointerEvent) => {
+            el.classList.add('is-glitching');
+            setTimeout(() => el.classList.remove('is-glitching'), 200);
+        };
+
+        el.addEventListener('pointerenter', onEnter);
+        el.addEventListener('pointerleave', onLeave);
+        el.addEventListener('click', onClick);
+
+        cleanupFns.push(() => {
+            el.removeEventListener('pointerenter', onEnter);
+            el.removeEventListener('pointerleave', onLeave);
+            el.removeEventListener('click', onClick);
+        });
+    });
+
+    return {
+        destroy: () => {
+            if (currentScrambleInterval) window.clearInterval(currentScrambleInterval);
+            cleanupFns.forEach(fn => fn());
+            panelManager.destroy();
+        }
+    };
+}

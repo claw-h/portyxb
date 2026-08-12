@@ -2,6 +2,7 @@ import { MeshStandardMaterial, type MeshStandardMaterialParameters, Material } f
 
 export function applyNonEuclideanCurve(material: Material, extrusionFactor = 0.0) {
     material.userData = {
+        ...material.userData,
         uExtrusionFactor: { value: extrusionFactor },
         uMorphState: { value: 0.0 }
     };
@@ -26,7 +27,11 @@ export function applyNonEuclideanCurve(material: Material, extrusionFactor = 0.0
             '#include <project_vertex>',
             `
             vec4 mvPosition = vec4( transformed, 1.0 );
-            vPlaneCoord = transformed.xz;
+            #ifdef USE_INSTANCING
+              vPlaneCoord = (instanceMatrix * vec4(transformed, 1.0)).xz;
+            #else
+              vPlaneCoord = transformed.xz;
+            #endif
             
             #ifdef USE_BATCHING
                 mvPosition = batchingMatrix * mvPosition;
@@ -101,6 +106,7 @@ export function createNonEuclideanMaterial(parameters: MeshStandardMaterialParam
     const material = new MeshStandardMaterial(parameters);
     
     material.userData = {
+        ...material.userData,
         uExtrusionFactor: { value: 0.0 },
         uWetness: { value: 0.0 },
         uMorphState: { value: 0.0 }
@@ -127,8 +133,12 @@ export function createNonEuclideanMaterial(parameters: MeshStandardMaterialParam
             `
             vec4 mvPosition = vec4( transformed, 1.0 );
             
-            // Capture the raw XZ coordinates before world transforms to anchor the grid to the mesh
-            vPlaneCoord = transformed.xz;
+            // Capture coordinates for dissolve — use instance world pos if instancing
+            #ifdef USE_INSTANCING
+              vPlaneCoord = (instanceMatrix * vec4(transformed, 1.0)).xz;
+            #else
+              vPlaneCoord = transformed.xz;
+            #endif
             
             #ifdef USE_BATCHING
                 mvPosition = batchingMatrix * mvPosition;

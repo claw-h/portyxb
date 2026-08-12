@@ -1,0 +1,166 @@
+import { PanelManager } from '../../ui/telemetry/PanelManager';
+import type { PanelConfig } from '../../ui/telemetry/types';
+
+// =====================================================================
+// Panel Configuration
+// =====================================================================
+
+const BRIEFING_PANEL_CONFIG: PanelConfig = {
+    id: 'biome-briefing',
+    eyebrow: 'PORTYXB // INITIALIZATION',
+    title: 'TERRAIN SURVEY PROTOCOL',
+    brand: 'YASH BHARDWAJ',
+    model: 'BIO-4.0',
+    labels: [
+        'Engineer (Coniferous Expanse)',
+        'Writer (Erosion Archives)',
+        'Designer (Vertical Settlement)',
+        'The Fool (Open Savanna)',
+    ],
+    channels: [
+        { id: 'dossierBody', type: 'text', label: 'Overview', placeholder: 'Initializing...' },
+        { id: 'instructions', type: 'text', label: 'Controls', placeholder: '' },
+        { id: 'mode', type: 'toggle', label: 'System Status', onLabel: 'ONLINE', offLabel: 'STANDBY' },
+    ],
+    collapsible: false,
+};
+
+// =====================================================================
+// Briefing Controller
+// =====================================================================
+
+export interface BiomeBriefingController {
+    isComplete: boolean;
+    show(): void;
+    hide(): void;
+    destroy(): void;
+    onComplete: (() => void) | null;
+}
+
+export function showBriefing(container: HTMLElement): BiomeBriefingController {
+    const panelManager = new PanelManager(container);
+    const panel = panelManager.registerPanel(BRIEFING_PANEL_CONFIG);
+
+    let isComplete = false;
+
+    // Position the panel center-screen
+    const updateLayout = () => {
+        // Fallbacks in case offsetWidth isn't available immediately
+        const width = panel.root.offsetWidth || 530;
+        const height = panel.root.offsetHeight || 380;
+        const cx = window.innerWidth / 2 - width / 2;
+        const cy = window.innerHeight / 2 - height / 2;
+        panelManager.update('biome-briefing', {
+            x: cx,
+            y: cy,
+            opacity: 1,
+        });
+    };
+
+    // Subtle float animation
+    let floatRaf = 0;
+    const floatAnim = () => {
+        if (isComplete) return;
+        const t = Date.now() * 0.001;
+        const bobY = Math.sin(t * 0.5) * 4;
+        const width = panel.root.offsetWidth || 530;
+        const height = panel.root.offsetHeight || 380;
+        const cx = window.innerWidth / 2 - width / 2;
+        const cy = window.innerHeight / 2 - height / 2 + bobY;
+        panelManager.update('biome-briefing', { x: cx, y: cy });
+        floatRaf = requestAnimationFrame(floatAnim);
+    };
+
+    const updatePanel = () => {
+        panel.root.classList.add('theme-forest'); // Default theme
+        panelManager.update('biome-briefing', {
+            activeLabel: -1,
+            scaleY: 1,
+            values: {
+                dossierBody: 'Welcome to the Biomesphere. Each terrain biome represents a category of my work. The survey encompasses four distinct zones.',
+                instructions: 'Use [W] and [S] keys or scroll to navigate between biomes.\n\nPRESS [ENTER] OR CLICK ANYWHERE TO BEGIN.',
+                mode: false,
+            },
+        });
+    };
+
+    const completeBriefing = () => {
+        if (isComplete) return;
+        isComplete = true;
+
+        // Animate to complete state
+        panelManager.update('biome-briefing', {
+            values: {
+                mode: true,
+                instructions: 'INITIATING EXPLORATION MODE...',
+            },
+        });
+
+        // Fade out over 1s then fire onComplete
+        let fadeStart = 0;
+        const fadeOut = (timestamp: number) => {
+            if (!fadeStart) fadeStart = timestamp;
+            const elapsed = timestamp - fadeStart;
+            const t = Math.min(elapsed / 1000, 1);
+            panelManager.update('biome-briefing', { opacity: 1 - t });
+
+            if (t < 1) {
+                requestAnimationFrame(fadeOut);
+            } else {
+                cancelAnimationFrame(floatRaf);
+                if (controller.onComplete) controller.onComplete();
+                controller.destroy();
+            }
+        };
+        requestAnimationFrame(fadeOut);
+    };
+
+    // Listen for interaction to dismiss
+    const onInteraction = (e: MouseEvent | KeyboardEvent) => {
+        if (isComplete) return;
+        if (e.type === 'keydown' && (e as KeyboardEvent).key !== 'Enter') return;
+        e.preventDefault();
+        completeBriefing();
+    };
+
+    const show = () => {
+        // Let it render for a frame so offsetWidth/offsetHeight are populated
+        requestAnimationFrame(() => {
+            updateLayout();
+            updatePanel();
+            panel.show();
+            floatAnim();
+        });
+        window.addEventListener('click', onInteraction);
+        window.addEventListener('keydown', onInteraction);
+    };
+
+    const hide = () => {
+        panel.hide();
+        cancelAnimationFrame(floatRaf);
+    };
+
+    const destroy = () => {
+        cancelAnimationFrame(floatRaf);
+        window.removeEventListener('click', onInteraction);
+        window.removeEventListener('keydown', onInteraction);
+        panelManager.destroy();
+    };
+
+    // Listen for resize
+    const onResize = () => updateLayout();
+    window.addEventListener('resize', onResize);
+
+    const controller: BiomeBriefingController = {
+        get isComplete() { return isComplete; },
+        show,
+        hide,
+        destroy() {
+            window.removeEventListener('resize', onResize);
+            destroy();
+        },
+        onComplete: null,
+    };
+
+    return controller;
+}

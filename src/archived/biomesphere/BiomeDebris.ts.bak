@@ -40,6 +40,7 @@ export function createDebrisSystem(trackGroup: any, trackMaterials: any[], BIOME
         trackGroup.add(imesh);
         
         debrisAnimations.push(() => {
+            const arr = imesh.instanceMatrix.array as Float32Array;
             for (let i = 0; i < count; i++) {
                 if (behavior === 'leaf') {
                     positions[i*3+1] -= 0.05 + Math.random()*0.05;
@@ -63,17 +64,35 @@ export function createDebrisSystem(trackGroup: any, trackMaterials: any[], BIOME
                     positions[i*3] += Math.sin(time * 2.5) * 0.08 + (Math.random()-0.5)*0.05;
                     positions[i*3+1] += Math.cos(time * 3.1) * 0.08 + (Math.random()-0.5)*0.05;
                     positions[i*3+2] += Math.sin(time * 1.7) * 0.08;
-                    
                     if (positions[i*3+1] > 8) positions[i*3+1] -= 0.2;
                     if (positions[i*3+1] < 1) positions[i*3+1] += 0.2;
-                    
                     rotations[i*3] += (Math.random()-0.5)*0.8;
                     rotations[i*3+1] += (Math.random()-0.5)*0.8;
                 }
-                dummy.position.set(positions[i*3], positions[i*3+1], positions[i*3+2]);
-                dummy.rotation.set(rotations[i*3], rotations[i*3+1], rotations[i*3+2]);
-                dummy.updateMatrix();
-                imesh.setMatrixAt(i, dummy.matrix);
+
+                // Direct 4x4 matrix composition from Euler XYZ + translation (no scale)
+                const rx = rotations[i*3], ry = rotations[i*3+1], rz = rotations[i*3+2];
+                const cx = Math.cos(rx), sx = Math.sin(rx);
+                const cy = Math.cos(ry), sy = Math.sin(ry);
+                const cz = Math.cos(rz), sz = Math.sin(rz);
+
+                const o = i * 16;
+                arr[o]     = cy * cz;
+                arr[o + 1] = cy * sz;
+                arr[o + 2] = -sy;
+                arr[o + 3] = 0;
+                arr[o + 4] = sx * sy * cz - cx * sz;
+                arr[o + 5] = sx * sy * sz + cx * cz;
+                arr[o + 6] = sx * cy;
+                arr[o + 7] = 0;
+                arr[o + 8] = cx * sy * cz + sx * sz;
+                arr[o + 9] = cx * sy * sz - sx * cz;
+                arr[o + 10] = cx * cy;
+                arr[o + 11] = 0;
+                arr[o + 12] = positions[i*3];
+                arr[o + 13] = positions[i*3+1];
+                arr[o + 14] = positions[i*3+2];
+                arr[o + 15] = 1;
             }
             imesh.instanceMatrix.needsUpdate = true;
         });

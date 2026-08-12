@@ -56,6 +56,21 @@
   --theme-text: #f0e6ff;
 }
 
+/* Map Biome Themes to InstrumentPanel Variables for Briefing Panel */
+.panel-assembly.theme-forest,
+.panel-assembly.theme-canyon,
+.panel-assembly.theme-city,
+.panel-assembly.theme-savanna {
+  --chassis-0: var(--theme-bg-0);
+  --chassis-1: var(--theme-bg-1);
+  --chassis-2: var(--theme-bg-2);
+  --chassis-edge: var(--theme-edge);
+  --chassis-edge-hi: var(--theme-edge-hi);
+  --accent-cyan: var(--theme-accent);
+  --text-hud: var(--theme-text);
+  transition: --chassis-0 0.5s, --chassis-1 0.5s, --chassis-2 0.5s, --chassis-edge 0.5s, --accent-cyan 0.5s, --text-hud 0.5s;
+}
+
 .biome-ui-container {
     position: absolute;
     top: 0; left: 0;
@@ -326,3 +341,26 @@
 
 .gear--alpha { top: -24px; left: -8px; width: 70px; height: 70px; animation-duration: 50s; }
 .gear--beta { bottom: 40px; right: -20px; width: 90px; height: 90px; animation-direction: reverse; animation-duration: 75s; }
+
+.briefing-expand {
+    -webkit-animation: expandHorizontal 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: expandHorizontal 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@-webkit-keyframes expandHorizontal {
+    0% {
+        -webkit-clip-path: inset(0 50% 0 50%);
+    }
+    100% {
+        -webkit-clip-path: inset(0 0 0 0);
+    }
+}
+
+@keyframes expandHorizontal {
+    0% {
+        clip-path: inset(0 50% 0 50%);
+    }
+    100% {
+        clip-path: inset(0 0 0 0);
+    }
+}

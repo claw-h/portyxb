@@ -1,0 +1,57 @@
+import * as THREE from 'three';
+
+export function createCore() {
+    const group = new THREE.Group();
+
+    // 1. Inner Core (Glowing Crystals)
+    const coreGeometry = new THREE.IcosahedronGeometry(0.8, 0);
+    const coreMaterial = new THREE.MeshStandardMaterial({
+        color: 0x111111,
+        emissive: 0x4da2ff,
+        emissiveIntensity: 1.0,
+        roughness: 0.1,
+        metalness: 0.9,
+    });
+    const coreMesh = new THREE.Mesh(coreGeometry, coreMaterial);
+    group.add(coreMesh);
+
+    // 2. Outer Glass Shell (Faceted)
+    const shellGeometry = new THREE.IcosahedronGeometry(1.2, 1);
+    const shellMaterial = new THREE.MeshPhysicalMaterial({
+        color: 0xffffff,
+        metalness: 0.1,
+        roughness: 0.05,
+        transmission: 1.0, // Glass-like
+        ior: 1.5,
+        thickness: 0.5,
+        transparent: true,
+        opacity: 1.0,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.1
+    });
+    const shellMesh = new THREE.Mesh(shellGeometry, shellMaterial);
+    group.add(shellMesh);
+    
+    // We export group as `mesh` so it works with the existing API. 
+    // We attach the core material to the group as a hack to allow the cascade 
+    // to tween its emissiveIntensity without breaking the existing contract.
+    (group as any).material = coreMaterial; 
+
+    const update = (time: number) => {
+        // Slow pulse (fresnel rim + emissive flicker)
+        coreMaterial.emissiveIntensity = 1.0 + Math.sin(time * 2) * 0.4;
+        
+        // Slight rotation to give the glass shell life
+        shellMesh.rotation.y = time * 0.2;
+        shellMesh.rotation.x = time * 0.1;
+    };
+    
+    const dispose = () => {
+        coreGeometry.dispose();
+        coreMaterial.dispose();
+        shellGeometry.dispose();
+        shellMaterial.dispose();
+    };
+
+    return { mesh: group as unknown as THREE.Mesh, update, dispose };
+}

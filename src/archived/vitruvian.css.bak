@@ -1,0 +1,114 @@
+/* src/styles/vitruvian.css */
+
+/* Core animus colors: pure white, deep cyan (#0ff), soft cyan (#8fdcff), harsh red (#ff003c) */
+
+.vitruvian-limb {
+    will-change: transform, filter, opacity;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    cursor: crosshair;
+    transform-origin: center center;
+    /* Hardware acceleration */
+    transform: translateZ(0);
+}
+
+/* Desync State (When any limb is hovered, blur the others) */
+.vitruvian-zone.has-active-hover .vitruvian-limb:not(.is-hovered) {
+    opacity: 0.4;
+    filter: grayscale(1) brightness(0.7);
+    transform: scale(0.99);
+}
+
+/* Sync State (The hovered limb) */
+.vitruvian-zone.has-active-hover .vitruvian-limb.is-hovered {
+    opacity: 1;
+    filter: brightness(1.3) drop-shadow(0 0 8px rgba(143, 220, 255, 0.6));
+    transform: scale(1.02);
+}
+
+.vitruvian-tether {
+    stroke: rgba(143, 220, 255, 0.8);
+    stroke-width: 2;
+    stroke-dasharray: 6 12;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+    filter: drop-shadow(0 0 4px rgba(143, 220, 255, 0.6));
+}
+
+.vitruvian-tether.is-visible {
+    opacity: 1;
+    animation: tether-flow 0.8s linear infinite;
+}
+
+@keyframes tether-flow {
+    to { stroke-dashoffset: -18; }
+}
+
+/* Animus Quadrant Crosshair */
+.quadrant-crosshair-x,
+.quadrant-crosshair-y {
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 6;
+    pointer-events: none;
+    opacity: 0.6;
+    transition: transform 0.1s cubic-bezier(0.2, 0, 0.2, 1);
+    will-change: transform;
+}
+
+.quadrant-crosshair-x {
+    width: 100%;
+    height: 1px;
+    border-top: 1px dotted rgba(143, 220, 255, 0.6);
+    box-shadow: 0 0 10px rgba(143, 220, 255, 0.4);
+}
+
+.quadrant-crosshair-y {
+    height: 100%;
+    width: 1px;
+    border-left: 1px dotted rgba(143, 220, 255, 0.6);
+    box-shadow: 0 0 10px rgba(143, 220, 255, 0.4);
+}
+
+
+/* Glitch State (Click/Active) */
+.vitruvian-limb.is-glitching {
+    animation: digital-jitter 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite both;
+}
+
+@keyframes digital-jitter {
+    0% { transform: translate(0, 0) scale(1.02); filter: invert(0); }
+    20% { transform: translate(-2px, 2px) scale(1.02); filter: invert(0.2); }
+    40% { transform: translate(-2px, -2px) scale(1.02); filter: invert(0.8); }
+    60% { transform: translate(2px, 2px) scale(1.02); filter: invert(0); }
+    80% { transform: translate(2px, -2px) scale(1.02); filter: invert(1); }
+    100% { transform: translate(0, 0) scale(1.02); filter: invert(0); }
+}
+
+/* Initial Compile Animation (Triggered by JS when scrolled into view) */
+.vitruvian-zone.is-compiling .vitruvian-svg-wrapper {
+    animation: 
+        animus-compile 3s cubic-bezier(0.16, 1, 0.3, 1) forwards,
+        mythos-float 12s ease-in-out infinite alternate 3s;
+}
+
+@keyframes animus-compile {
+    0% { 
+        opacity: 0; 
+        transform: scale(1.15) translateZ(100px); 
+        filter: blur(30px) brightness(3) drop-shadow(0 0 100px rgba(143, 220, 255, 1)); 
+    }
+    15% {
+        opacity: 1;
+        filter: blur(10px) brightness(2) drop-shadow(0 0 50px rgba(143, 220, 255, 0.8));
+    }
+    100% { 
+        opacity: 1; 
+        transform: scale(1) translateZ(0); 
+        filter: blur(0) brightness(1) drop-shadow(0 0 20px rgba(143, 220, 255, 0.05)); 
+    }
+}
+
+@keyframes mythos-float {
+    0% { transform: translateY(0) rotate(0); }
+    100% { transform: translateY(-15px) rotate(0.5deg); }
+}

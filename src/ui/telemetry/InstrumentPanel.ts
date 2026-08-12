@@ -342,7 +342,6 @@ export class InstrumentPanel {
     // =====================================================================
 
     public setPosition(x: number, y: number, z: number, rotationY: number) {
-        if (this._lastOpacity === '0') return; // Bypass invisible updates
         const transform = `translate3d(${x}px, ${y}px, ${z}px) rotateY(${rotationY}deg) scale(var(--panel-scale, 0.70))`;
         if (this._lastTransform === transform) return;
         this._lastTransform = transform;

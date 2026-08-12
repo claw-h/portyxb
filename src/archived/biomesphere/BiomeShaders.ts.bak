@@ -1,4 +1,4 @@
-import { MeshBasicMaterial, Color, Mesh } from 'three';
+import { MeshBasicMaterial, Color, Mesh, Vector2 } from 'three';
 import { applyNonEuclideanCurve } from '../../materials/NonEuclideanMaterial';
 
 export function applyWindSway(mat: any, timeUniforms: any) {
@@ -16,7 +16,12 @@ export function applyWindSway(mat: any, timeUniforms: any) {
             `
             #include <begin_vertex>
             
-            vec4 windWorldPos = modelMatrix * vec4(position, 1.0);
+            vec4 windWorldPos;
+            #ifdef USE_INSTANCING
+              windWorldPos = modelMatrix * instanceMatrix * vec4(position, 1.0);
+            #else
+              windWorldPos = modelMatrix * vec4(position, 1.0);
+            #endif
             
             float treeHeight = max(0.0, position.y);
             float bend = treeHeight * treeHeight * 0.012; 
@@ -35,7 +40,7 @@ export function applyWindSway(mat: any, timeUniforms: any) {
 
 export function wrapWireframe(childMesh: Mesh, coreMat: any, wireProps: any, trackMaterials: any[], timeUniforms: any) {
     childMesh.material = coreMat;
-    
+
     let wireColor = new Color(wireProps.color);
     if (wireProps.matchColor && coreMat.color) {
         wireColor.copy(coreMat.color);
@@ -160,8 +165,56 @@ export const FadeBlackShader = {
         uniform float uBlackness;
         varying vec2 vUv;
         void main() {
-            vec4 col = texture2D(tDiffuse, vUv);
-            gl_FragColor = vec4(col.rgb * (1.0 - uBlackness), 1.0);
+            vec4 texel = texture2D(tDiffuse, vUv);
+            vec3 darkColor = vec3(0.04, 0.05, 0.08); // A deep, cold off-black
+            gl_FragColor = vec4(mix(texel.rgb, darkColor, uBlackness), texel.a);
+        }
+    `
+};
+
+export const VignetteBlurShader = {
+    uniforms: {
+        'tDiffuse': { value: null },
+        'uResolution': { value: new Vector2(window.innerWidth, window.innerHeight) },
+        'uMaxBlur': { value: 3.0 }
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform vec2 uResolution;
+        uniform float uMaxBlur;
+        varying vec2 vUv;
+        
+        // 9-tap gaussian blur
+        const float weight[5] = float[](0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+
+        void main() {
+            vec2 pixelSize = 1.0 / uResolution;
+            
+            // Calculate distance from center (0,0 to 1,1) -> center is (0.5, 0.5)
+            float dist = distance(vUv, vec2(0.5, 0.5));
+            
+            // Create a smooth vignette curve that starts increasing past 0.4
+            float blurAmount = smoothstep(0.4, 0.8, dist) * uMaxBlur;
+            
+            vec4 result = texture2D(tDiffuse, vUv) * weight[0];
+            vec2 offset;
+            
+            if (blurAmount > 0.0) {
+                for(int i = 1; i < 5; ++i) {
+                    offset = vec2(float(i)) * pixelSize * blurAmount;
+                    result += texture2D(tDiffuse, vUv + offset) * weight[i];
+                    result += texture2D(tDiffuse, vUv - offset) * weight[i];
+                }
+            }
+            
+            gl_FragColor = result;
         }
     `
 };

@@ -1,0 +1,233 @@
+import * as THREE from 'three';
+import type { RingNode } from './rings';
+import { tweenManager, Easing } from '../../utils/animation';
+
+export function setupCascade(scene: THREE.Scene, ringsData: { group: THREE.Group, rings: RingNode[] }, coreMesh: THREE.Mesh) {
+    const { group, rings } = ringsData;
+    const crystalGeometry = (group as any).crystalGeometry as THREE.ExtrudeGeometry;
+    const pooledMeshes: Map<string, THREE.InstancedMesh> = new Map();
+    const dummy = new THREE.Object3D();
+    
+    // Create DOM panel container
+    const panel = document.createElement('div');
+    panel.className = 'armillary-reveal-panel';
+    panel.style.opacity = '0';
+    panel.style.pointerEvents = 'none';
+    document.getElementById('vitruvian-wrapper')?.appendChild(panel);
+
+    const getInstancedMesh = (targetRing: RingNode): THREE.InstancedMesh => {
+        if (pooledMeshes.has(targetRing.id)) {
+            return pooledMeshes.get(targetRing.id)!;
+        }
+        
+        const count = targetRing.category.projects.length;
+        const mesh = new THREE.InstancedMesh(crystalGeometry, targetRing.crystalMaterial, count);
+        mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        
+        for (let i = 0; i < count; i++) {
+            dummy.position.set(0, 0, 0);
+            dummy.scale.set(0, 0, 0);
+            dummy.updateMatrix();
+            mesh.setMatrixAt(i, dummy.matrix);
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        
+        scene.add(mesh);
+        pooledMeshes.set(targetRing.id, mesh);
+        
+        return mesh;
+    };
+
+    const triggerCascade = (targetId: string, onClose: () => void) => {
+        const targetRing = rings.find(r => r.id === targetId);
+        if (!targetRing) return;
+
+        // Flash core
+        const mat = (coreMesh as any).material as THREE.MeshStandardMaterial;
+        const startEmissive = mat.emissiveIntensity;
+        tweenManager.to({
+            from: startEmissive,
+            to: 4.0, // peak pulse
+            duration: 200,
+            easing: Easing.easeOutExpo,
+            onUpdate: (v) => mat.emissiveIntensity = v,
+            onComplete: () => {
+                tweenManager.to({
+                    from: 4.0,
+                    to: startEmissive,
+                    duration: 600,
+                    easing: Easing.easeOutCubic,
+                    onUpdate: (v) => mat.emissiveIntensity = v,
+                });
+            }
+        });
+
+        // Alignment Sequence
+        rings.forEach(ring => {
+            (ring as any).isAligned = true; // Stop random rotation
+            const isTarget = ring.id === targetId;
+            const startRot = ring.mesh.quaternion.clone();
+            
+            // We want to align them flat to the XY plane (facing camera)
+            const targetRot = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI/2, 0, 0));
+            
+            const startOp = ring.material.opacity;
+            const targetOp = isTarget ? 0.9 : 0.2; 
+            const startEm = (ring.material as THREE.MeshPhysicalMaterial).emissiveIntensity;
+            const targetEm = isTarget ? 1.5 : 0.05;
+
+            tweenManager.to({
+                from: 0,
+                to: 1,
+                duration: 600,
+                easing: Easing.easeOutCubic,
+                onUpdate: (t) => {
+                    ring.mesh.quaternion.slerpQuaternions(startRot, targetRot, t);
+                    ring.material.opacity = startOp + (targetOp - startOp) * t;
+                    (ring.material as THREE.MeshPhysicalMaterial).emissiveIntensity = startEm + (targetEm - startEm) * t;
+                }
+            });
+        });
+
+        // Spawn Crystals (InstancedMesh)
+        const count = targetRing.category.projects.length;
+        if (count > 0) {
+            const instanced = getInstancedMesh(targetRing);
+            instanced.visible = true;
+            
+            // Fan out horizontally in a wide arc below the core
+            const baseAngle = 0;
+            const arcSpread = Math.PI * 0.8; 
+            
+            for (let i = 0; i < count; i++) {
+                setTimeout(() => {
+                    const spreadAngle = baseAngle + (count > 1 ? (i / (count - 1)) * arcSpread - (arcSpread / 2) : 0);
+                    
+                    tweenManager.to({
+                        from: 0,
+                        to: 1,
+                        duration: 800,
+                        easing: Easing.easeOutBack, 
+                        onUpdate: (t) => {
+                            const distance = 0.5 + t * 4.5; 
+                            
+                            dummy.position.set(
+                                Math.sin(spreadAngle) * distance,
+                                -Math.cos(spreadAngle) * distance * 0.3 - 1.0, // slight droop
+                                Math.cos(spreadAngle) * distance * 0.5 + 2.0 // push forward to camera
+                            );
+                            
+                            // Point crystals outward
+                            dummy.rotation.x = Math.PI / 2;
+                            dummy.rotation.z = -spreadAngle; 
+                            dummy.scale.set(t, t, t);
+                            dummy.updateMatrix();
+                            instanced.setMatrixAt(i, dummy.matrix);
+                            instanced.instanceMatrix.needsUpdate = true;
+                        }
+                    });
+                }, i * 80); 
+            }
+        }
+
+        // Populate and show Reveal Panel
+        panel.innerHTML = `
+            <div class="reveal-header">
+                <button class="reveal-close">← BACK</button>
+                <h3 style="color: ${targetRing.category.accent}">${targetRing.category.label}</h3>
+            </div>
+            <div class="reveal-projects">
+                ${targetRing.category.projects.map((p, idx) => `
+                    <div class="reveal-project" style="transition-delay: ${idx * 60 + 200}ms">
+                        <h4>${p.title}</h4>
+                        <p>${p.blurb}</p>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        panel.style.pointerEvents = 'auto';
+        
+        const closeBtn = panel.querySelector('.reveal-close');
+        closeBtn?.addEventListener('click', () => {
+            panel.style.pointerEvents = 'none';
+            panel.style.opacity = '0';
+            
+            if (count > 0) {
+                const instanced = getInstancedMesh(targetRing);
+                const baseAngle = 0;
+                const arcSpread = Math.PI * 0.8;
+
+                for (let i = 0; i < count; i++) {
+                    setTimeout(() => {
+                        const spreadAngle = baseAngle + (count > 1 ? (i / (count - 1)) * arcSpread - (arcSpread / 2) : 0);
+                        
+                        tweenManager.to({
+                            from: 1,
+                            to: 0,
+                            duration: 500,
+                            easing: Easing.easeOutCubic,
+                            onUpdate: (t) => {
+                                const distance = 0.5 + t * 4.5;
+                                dummy.position.set(
+                                    Math.sin(spreadAngle) * distance,
+                                    -Math.cos(spreadAngle) * distance * 0.3 - 1.0,
+                                    Math.cos(spreadAngle) * distance * 0.5 + 2.0
+                                );
+                                dummy.rotation.x = Math.PI / 2;
+                                dummy.rotation.z = -spreadAngle;
+                                dummy.scale.set(t, t, t);
+                                dummy.updateMatrix();
+                                instanced.setMatrixAt(i, dummy.matrix);
+                                instanced.instanceMatrix.needsUpdate = true;
+                            },
+                            onComplete: () => {
+                                if (i === count - 1) {
+                                    instanced.visible = false;
+                                    onClose(); 
+                                }
+                            }
+                        });
+                    }, (count - 1 - i) * 50); 
+                }
+            } else {
+                onClose();
+            }
+
+            // Unalign rings and restore original opacities
+            rings.forEach(ring => {
+                const startOp = ring.material.opacity;
+                const startEm = (ring.material as THREE.MeshPhysicalMaterial).emissiveIntensity;
+                tweenManager.to({
+                    from: 0,
+                    to: 1,
+                    duration: 600,
+                    easing: Easing.easeOutCubic,
+                    onUpdate: (t) => {
+                        ring.material.opacity = startOp + (0.8 - startOp) * t;
+                        (ring.material as THREE.MeshPhysicalMaterial).emissiveIntensity = startEm + (0.2 - startEm) * t;
+                    },
+                    onComplete: () => {
+                        (ring as any).isAligned = false; // Resume random rotation
+                    }
+                });
+            });
+        });
+
+        setTimeout(() => {
+            panel.style.opacity = '1';
+            const items = panel.querySelectorAll('.reveal-project');
+            items.forEach(el => el.classList.add('is-visible'));
+        }, 300);
+    };
+
+    const dispose = () => {
+        panel.remove();
+        pooledMeshes.forEach(mesh => {
+            mesh.geometry.dispose();
+            scene.remove(mesh);
+        });
+        pooledMeshes.clear();
+    };
+
+    return { triggerCascade, dispose };
+}

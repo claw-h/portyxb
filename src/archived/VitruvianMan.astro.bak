@@ -1,0 +1,183 @@
+---
+import rawSvg from '../assets/VitruvianMan.svg?raw';
+import invertedSvg from '../assets/VitruvianMan-Inverted.svg?raw';
+
+// Remove the hardcoded stretching to maintain natural aspect ratio
+const processedSvg = rawSvg.replace('preserveAspectRatio="none"', 'preserveAspectRatio="xMidYMid meet"');
+const processedInvertedSvg = invertedSvg.replace('preserveAspectRatio="none"', 'preserveAspectRatio="xMidYMid meet"');
+---
+
+<div class="vitruvian-svg-wrapper" id="vitruvian-wrapper">
+    <div class="vitruvian-base-layer">
+        <Fragment set:html={processedSvg} />
+    </div>
+
+    <!-- Fluid Reveal Group (Fluid masked by inverted lines) -->
+    <!-- Fades in to reveal the inverted drawing mapped to the fluid -->
+    <div class="vitruvian-fluid-reveal-group" aria-hidden="true">
+        <!-- WebGL Fluid Ink Simulation Layer -->
+        <canvas id="vitruvian-fluid-canvas"></canvas>
+
+        <div class="vitruvian-inverted-layer">
+            <Fragment set:html={processedInvertedSvg} />
+        </div>
+    </div>
+    
+    <!-- Ethereal mythos halo -->
+    <div class="mythos-halo" aria-hidden="true"></div>
+
+    <!-- Animus quadrant selector (crosshair) -->
+    <div class="quadrant-crosshair-x" aria-hidden="true"></div>
+    <div class="quadrant-crosshair-y" aria-hidden="true"></div>
+
+    <!-- CRT TV Screen Effects (Curvature glass, scanlines, RGB split) -->
+    <div class="crt-overlay" aria-hidden="true"></div>
+    <div class="crt-glass" aria-hidden="true"></div>
+
+    <!-- Screen-space overlay for dynamic tethers -->
+    <svg class="tether-overlay" aria-hidden="true">
+        <line id="vitruvian-tether-line" class="vitruvian-tether" x1="0" y1="0" x2="0" y2="0" />
+    </svg>
+</div>
+
+<style>
+.vitruvian-svg-wrapper {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    /* Heavy CRT RGB Chromatic Aberration */
+    filter: drop-shadow(3px 0px 0px rgba(255, 0, 60, 0.6)) drop-shadow(-3px 0px 0px rgba(0, 255, 255, 0.6));
+    /* Feather edges to transparent to blend perfectly into the void */
+    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, black 40%, transparent 80%);
+    mask-image: radial-gradient(ellipse at 50% 50%, black 40%, transparent 80%);
+}
+
+/* CRT Scanline Overlay */
+.crt-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    pointer-events: none;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+    background-size: 100% 4px, 6px 100%;
+    opacity: 0.7;
+    animation: crt-flicker 0.15s infinite;
+}
+
+@keyframes crt-flicker {
+    0% { opacity: 0.65; }
+    50% { opacity: 0.75; }
+    100% { opacity: 0.65; }
+}
+
+/* CRT Fisheye Glass Curvature Simulation */
+.crt-glass {
+    position: absolute;
+    inset: -2%; /* Slightly larger to allow the vignette to curve inwards */
+    z-index: 21;
+    pointer-events: none;
+    border-radius: 50% / 10%; /* Simulates the classic bowed tube screen */
+    box-shadow: 
+        inset 0 0 100px rgba(0,0,0,0.9),
+        inset 0 0 40px rgba(0,0,0,0.7);
+    /* Subtle curved screen glare */
+    background: radial-gradient(ellipse at center, rgba(255,255,255,0.03) 0%, transparent 60%);
+    transition: opacity 0.4s ease;
+}
+
+.vitruvian-base-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.mythos-halo {
+    position: absolute;
+    inset: -20%;
+    background: radial-gradient(circle at 50% 50%, rgba(143, 220, 255, 0.08) 0%, transparent 60%);
+    border-radius: 50%;
+    animation: halo-pulse 6s ease-in-out infinite alternate;
+    pointer-events: none;
+    z-index: 0;
+}
+
+@keyframes halo-pulse {
+    0% { transform: scale(0.9); opacity: 0.5; }
+    100% { transform: scale(1.1); opacity: 1; }
+}
+
+.vitruvian-fluid-reveal-group {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 10;
+    /* Blend the revealed ink lines over the base image */
+    mix-blend-mode: screen; 
+    opacity: 0;
+    transition: opacity 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+}
+
+/* When the zone has a hover, fade in the fluid reveal group */
+:global(.vitruvian-zone.has-active-hover) .vitruvian-fluid-reveal-group {
+    opacity: 1;
+}
+
+.vitruvian-inverted-layer {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    /* Multiply the inverted SVG over the canvas. 
+       Black background of SVG * Fluid = Black.
+       White lines of SVG * Fluid = Fluid color. 
+       Effectively clips the fluid exactly to the drawing! */
+    mix-blend-mode: multiply;
+}
+
+/* Make sure the injected SVG fills the space but respects aspect ratio */
+:global(.vitruvian-base-layer svg),
+:global(.vitruvian-inverted-layer svg) {
+    width: 100%;
+    height: 100%;
+    max-height: 90vh;
+    object-fit: contain;
+}
+
+/* Add a subtle base glow */
+:global(.vitruvian-base-layer svg) {
+    filter: drop-shadow(0 0 20px rgba(143, 220, 255, 0.05));
+}
+
+#vitruvian-fluid-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    /* Force fluid color to neutral blue theme */
+    filter: sepia(1) hue-rotate(180deg) saturate(2) brightness(1.5);
+}
+
+.tether-overlay {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 15;
+}
+</style>

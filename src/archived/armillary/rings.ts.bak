@@ -1,0 +1,118 @@
+import * as THREE from 'three';
+import { categories, type Category } from './categories';
+import { tweenManager, Easing } from '../../utils/animation';
+
+export interface RingNode {
+    id: string;
+    category: Category;
+    mesh: THREE.Mesh;
+    hitbox: THREE.Mesh;
+    material: THREE.Material;
+    crystalMaterial: THREE.Material;
+    baseRotationAxis: THREE.Vector3;
+    rotationSpeed: number;
+    hoverTween?: { stop: () => void };
+}
+
+export function createRings() {
+    const group = new THREE.Group();
+    const rings: RingNode[] = [];
+    
+    // Extrude geometry for the crystals that will cascade out
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.1);
+    shape.lineTo(0.2, 0);
+    shape.lineTo(0, -0.1);
+    shape.lineTo(-0.2, 0);
+    shape.lineTo(0, 0.1);
+
+    const extrudeSettings = {
+        steps: 1,
+        depth: 0.8,
+        bevelEnabled: true,
+        bevelThickness: 0.1,
+        bevelSize: 0.05,
+        bevelSegments: 2
+    };
+    const crystalGeometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    crystalGeometry.translate(0, 0, -0.4); // Center it
+
+    // Expose crystalGeometry so cascade.ts can use it
+    (group as any).crystalGeometry = crystalGeometry;
+
+    const axes = [
+        new THREE.Vector3(1, 0, 0).normalize(),
+        new THREE.Vector3(0.5, 1, 0.2).normalize(),
+        new THREE.Vector3(-0.2, 1, 0.8).normalize(),
+        new THREE.Vector3(0.8, -0.2, 1).normalize()
+    ];
+
+    categories.forEach((cat, index) => {
+        const radius = 2.5 + index * 0.5; // 2.5, 3.0, 3.5, 4.0
+        const tube = 0.03;
+        const ringGeometry = new THREE.TorusGeometry(radius, tube, 16, 100);
+        const hitboxGeometry = new THREE.TorusGeometry(radius, 0.4, 8, 32);
+
+        const material = new THREE.MeshPhysicalMaterial({
+            color: 0x888888,
+            emissive: new THREE.Color(cat.accent),
+            emissiveIntensity: 0.2, // Idle dim
+            roughness: 0.4,
+            metalness: 0.9,
+            clearcoat: 1.0,
+            transparent: true,
+            opacity: 0.8
+        });
+
+        // The material for the cascading crystals
+        const crystalMaterial = new THREE.MeshPhysicalMaterial({
+            color: 0xffffff,
+            emissive: new THREE.Color(cat.accent),
+            emissiveIntensity: 0.8,
+            roughness: 0.1,
+            metalness: 0.3,
+            transmission: 0.9,
+            ior: 1.5,
+            thickness: 0.5,
+            clearcoat: 1.0,
+            transparent: true,
+            opacity: 1.0
+        });
+
+        const mesh = new THREE.Mesh(ringGeometry, material);
+        
+        // Initial random orientation
+        mesh.rotation.x = Math.random() * Math.PI;
+        mesh.rotation.y = Math.random() * Math.PI;
+        
+        const hitboxMaterial = new THREE.MeshBasicMaterial({ visible: false });
+        const hitbox = new THREE.Mesh(hitboxGeometry, hitboxMaterial);
+        hitbox.userData = { ringId: cat.id };
+        mesh.add(hitbox);
+        
+        group.add(mesh);
+        rings.push({
+            id: cat.id,
+            category: cat,
+            mesh,
+            hitbox,
+            material,
+            crystalMaterial,
+            baseRotationAxis: axes[index % axes.length],
+            rotationSpeed: 0.1 + Math.random() * 0.2
+        });
+    });
+    
+    const dispose = () => {
+        crystalGeometry.dispose();
+        rings.forEach(r => {
+            r.mesh.geometry.dispose();
+            r.hitbox.geometry.dispose();
+            r.material.dispose();
+            r.crystalMaterial.dispose();
+            (r.hitbox.material as THREE.Material).dispose();
+        });
+    };
+    
+    return { group, rings, dispose };
+}

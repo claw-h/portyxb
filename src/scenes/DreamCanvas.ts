@@ -654,6 +654,14 @@ export function setupDreamCanvas(): LoopController | null {
 		return;
 	}
 	
+	const initialWidth = Math.floor(outputCanvas.clientWidth);
+	const initialHeight = Math.floor(outputCanvas.clientHeight);
+	let glyphs: any[] = [];
+	let lastWidth = initialWidth;
+	let lastHeight = initialHeight;
+	let frameNeedsGlyphRedraw = true;
+	let canvasWasDrawn = false;
+
 	// 1. DONT await the font load here! Let it happen asynchronously in the background.
 	document.fonts.load('500 56px "Unbounded"').then(() => {
 		// 2. This runs LATER, whenever the browser finally downloads the font.
@@ -690,8 +698,6 @@ export function setupDreamCanvas(): LoopController | null {
 
 	const { masterGroup, instances, wireUniforms, updateEdgeNulls } = buildStaircaseTriptych(scene, baseGeometry, camera);
 
-	const initialWidth = Math.floor(outputCanvas.clientWidth);
-	const initialHeight = Math.floor(outputCanvas.clientHeight);
 	const dpr = Math.min(window.devicePixelRatio, 1.5);
 
 	bufferCanvas.width = initialWidth * dpr;
@@ -726,12 +732,7 @@ export function setupDreamCanvas(): LoopController | null {
 	composer.setSize(initialWidth, initialHeight);
 	lensPass.uniforms.uResolution.value.set(initialWidth * dpr, initialHeight * dpr);
 
-	let glyphs = buildGlyphs(initialWidth, initialHeight);
-	let lastWidth = initialWidth;
-	let lastHeight = initialHeight;
-	let frameNeedsGlyphRedraw = true;
-
-	let canvasWasDrawn = false;
+	glyphs = buildGlyphs(initialWidth, initialHeight);
 
 	function applyResize(width: number, height: number): void {
 		const rdpr = Math.min(window.devicePixelRatio, 1.5);

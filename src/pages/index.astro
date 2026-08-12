@@ -3,6 +3,8 @@ import Layout from '../layouts/Layout.astro';
 import Preloader from '../components/Preloader.astro';
 
 import '../styles/ui.css';
+import '../styles/dossier.css';
+import DossierIndex from '../components/DossierIndex.astro';
 
 ---
 
@@ -82,61 +84,15 @@ import '../styles/ui.css';
 			<!-- No DOM copy — declaration is rendered character-by-character via pretext onto canvas -->
 		</section>
 
-		<!-- ═══════════════════════════════════════════
-			ZONE 03 — BIOME SPHERE (Works)
-		════════════════════════════════════════════ -->
-		<section class="biome-zone canvas-zone" id="work" data-canvas-zone="biome">
-			<div id="phase-4" style="position: absolute; top: 0;"></div>
-			<div class="biome-sticky">
-				<canvas class="biome-canvas" data-biome-canvas></canvas>
-				
-				<!-- The UI layer for our sci-fi telemetry system -->
-				<div id="biome-ui-layer" class="biome-ui-container"></div>
-				
-				<!-- Subtle gradient overlay to blend the sphere edges into the void -->
-				<div class="biome-vignette" aria-hidden="true"></div>
+		<!-- 
+		     ZONE 03 — CASE DOSSIER
+		     Replaces both the old Vitruvian/Vinyl zone and the CRT TV zone.
+		-->
+		<section class="dossier-zone canvas-zone" id="work" style="position: relative; height: 300vh;">
+			<div class="dossier-sticky" style="position: sticky; top: 0; height: 100vh; overflow: hidden;">
+				<DossierIndex />
 			</div>
 		</section>
-
-		<!-- ═══════════════════════════════════════════
-		     ZONE 04 — VOID CANVAS / CRT TV
-		════════════════════════════════════════════ -->
-		<section class="void-zone canvas-zone" data-canvas-zone="void">
-			<div class="void-tv">
-				<div class="void-shell">
-					<div class="void-shell__screen">
-						<canvas data-void-canvas></canvas>
-						<div class="void-shell__glass"></div>
-						<div class="void-shell__glare"></div>
-						<div class="void-spotlight" aria-hidden="true"></div>
-						<div class="void-copy-panel">
-							<div class="void-copy-content">
-								<p class="eyebrow">ZONE 04 / AFTERIMAGE</p>
-								<h2>The frame keeps moving after the cut.</h2>
-								<p>
-									A darker room of particles, light leaks, and drifting fragments.
-									Move through it and the field bends around you.
-								</p>
-							</div>
-						</div>
-					</div>
-					<div class="void-shell__badge">YXB</div>
-					<div class="void-shell__antenna" aria-hidden="true"></div>
-					<div class="void-shell__grille"></div>
-					<div class="void-controls" aria-hidden="true">
-						<div class="void-knob void-knob--large"></div>
-						<div class="void-knob void-knob--small"></div>
-						<div class="void-button"></div>
-					</div>
-					<div class="void-speaker" aria-hidden="true"></div>
-				</div>
-				<div class="void-legs" aria-hidden="true">
-					<span></span><span></span>
-				</div>
-			</div>
-		</section>
-
-
 
 		<!-- DEV NAVIGATION HOTKEY (Press 'N' to toggle) - Delete this block for prod -->
 		<script>
@@ -169,7 +125,6 @@ import '../styles/ui.css';
 	import { onReady }             from '../utils/loadState';
 	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
-	import { setupDreamCanvas, setDreamScrollVelocity, setDreamScrollProgress } from '../scenes/DreamCanvas';
 	
 	let setDreamScrollVelocity: ((v: number) => void) | null = null;
 	let setDreamScrollProgress: ((p: number) => void) | null = null;
@@ -188,38 +143,19 @@ import '../styles/ui.css';
 	let active3DScene: LoopController | null = null;
 	let isInitializing = false; // Add this guard flag
 
-	// BiomeSphere loads async (see init3DSystem below), so its scroll setter
-	// isn't available until that import resolves. Lenis scroll events that
-	// fire before then are harmless no-ops — we just guard the call.
-	let setBiomeProgress: ((progress: number) => void) | null = null;
-	const biomeZoneEl = document.querySelector<HTMLElement>('.biome-zone');
-
-	// Section-local scroll progress: 0 at the moment .biome-zone's sticky
-	// area locks in place, 1 at the moment it releases. This is deliberately
-	// NOT the same as DreamCanvas's whole-page progress — .biome-zone is
-	// 400vh with a 100vh sticky child, so only the middle 300vh of page
-	// scroll should map to 0→1 here.
-	function getBiomeSectionProgress(scrollY: number): number {
-		if (!biomeZoneEl) return 0;
-		const sectionTop = biomeZoneEl.offsetTop;
-		const scrollableDistance = biomeZoneEl.offsetHeight - window.innerHeight;
-		if (scrollableDistance <= 0) return 0;
-		return Math.min(Math.max((scrollY - sectionTop) / scrollableDistance, 0), 1);
-	}
-
 	let heartSceneInit = false;
-	let biomeSceneInit = false;
+	let dossierScene: { destroy: () => void } | null = null;
 
 	document.addEventListener('DOMContentLoaded', () => {
-		const biomeContainers = document.querySelectorAll('.biome-zone');
-		const biomeObserver = new IntersectionObserver((entries) => {
+		const zones = document.querySelectorAll('.dossier-zone');
+		const observer = new IntersectionObserver((entries) => {
 			let isAnySceneVisible = false;
 			entries.forEach(entry => {
 				if (entry.isIntersecting) {
 					isAnySceneVisible = true;
-					if (entry.target.classList.contains('biome-zone') && !biomeSceneInit) {
-						biomeSceneInit = true;
-						initBiomeScene();
+					const zone = entry.target;
+					if (zone.classList.contains('dossier-zone')) {
+						if (!dossierScene) initDossierScene();
 					}
 				}
 			});
@@ -229,7 +165,7 @@ import '../styles/ui.css';
 				document.body.removeAttribute('data-scene-active');
 			}
 		}, { rootMargin: '100% 0px', threshold: 0.01 });
-		biomeContainers.forEach(scene => biomeObserver.observe(scene));
+		zones.forEach(zone => observer.observe(zone));
 	});
 
 	async function initHeartScene() {
@@ -246,22 +182,21 @@ import '../styles/ui.css';
 	}
 	initHeartScene();
 
-	async function initBiomeScene() {
+	async function initDossierScene() {
 		try {
-			const { setupBiomeSphere, setBiomeScrollProgress } = await import('../scenes/BiomeSphere');
-			const biomeScene = setupBiomeSphere();
-			setBiomeProgress = setBiomeScrollProgress;
-			if (setBiomeProgress) {
-				setBiomeProgress(getBiomeSectionProgress(window.scrollY));
-			}
+			const { setupDossierScene } = await import('../controllers/DossierScene');
+			dossierScene = setupDossierScene();
 
 			const originalDestroy = (window as any).destroy || function() {};
 			(window as any).destroy = () => {
 				originalDestroy();
-				biomeScene?.destroy();
+				if (dossierScene) {
+					dossierScene.destroy();
+					dossierScene = null;
+				}
 			};
 		} catch (error) {
-			console.error("Failed to load Biome scene:", error);
+			console.error("Failed to initialize Dossier Scene:", error);
 		}
 	}
 
@@ -290,9 +225,7 @@ import '../styles/ui.css';
 		}, { rootMargin: '100% 0px', threshold: 0.01 });
 
 		const dreamEl = document.querySelector('.dream-zone');
-		const voidEl = document.querySelector('.void-zone');
 		if (dreamEl) lazyObserver.observe(dreamEl);
-		if (voidEl) lazyObserver.observe(voidEl);
 	});
 
 	// 2. Initialize Lenis to prevent scrolling too fast
@@ -311,8 +244,6 @@ import '../styles/ui.css';
 	lenis.on('scroll', (e: { velocity: number; progress: number; scroll: number; }) => {
 		setDreamScrollVelocity?.(e.velocity);
 		setDreamScrollProgress?.(e.progress); 
-
-		setBiomeProgress?.(getBiomeSectionProgress(e.scroll));
 	});
 
     // 4. Mount Lenis to the browser's requestAnimationFrame
@@ -322,17 +253,6 @@ import '../styles/ui.css';
     }
     requestAnimationFrame(raf);
 
-	// ─── THE NEW SCROLL LOCK LOGIC ──────────────────────────────
-
-	// 1. Lock the scroll when the flash sequence begins
-	window.addEventListener('biome-flash-start', () => {
-		lenis.stop(); // Physically prevents the user from scrolling further
-	});
-
-	// 2. Unlock the scroll when the 10 rotations finish
-	window.addEventListener('biome-flash-complete', () => {
-		lenis.start(); // Restores scroll functionality
-	});
 
 	// Everything above has been rendering, off-screen, behind the opaque
 	// preloader this whole time. Only once fonts + the heart scene + the
@@ -347,8 +267,10 @@ import '../styles/ui.css';
 	// Unified cleanup for view transitions / HMR
 	const destroy = (): void => {
 		active3DScene?.destroy();
-		dream?.destroy();
-		void_?.destroy();
+		if (dossierScene) {
+			dossierScene.destroy();
+			dossierScene = null;
+		}
 		cursor?.destroy();
 		heroCopy?.();
         lenis.destroy(); // <-- 5. Clean up Lenis on page swap
@@ -796,7 +718,7 @@ import '../styles/ui.css';
 		font-size: clamp(1.2rem, 2.8vw, 2.4rem);
 		font-weight: 520;
 	}
-	/* ─── Canvas zones (signal + void shared) ────────── */
+	/* ─── Dossier transitions will be handled in dossier.css ─── */
 	.canvas-zone {
 		position: relative;
 		min-height: 100vh;
@@ -824,6 +746,12 @@ import '../styles/ui.css';
 		display: block;
 	}
 
+	.dossier-zone {
+		padding: 0;
+		display: block;
+		background: #020508;
+	}
+
 		/* ─── Zone 03: Biome Sphere ──────────────────────── */
 	.biome-zone {
 		position: relative;
@@ -843,21 +771,6 @@ import '../styles/ui.css';
 		overflow: visible;
 	}
 
-	.biome-sticky {
-		position: sticky;
-		top: 0;
-		height: 100vh;
-		overflow: hidden;
-	}
-
-	.biome-canvas {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		display: block;
-		z-index: 1;
-	}
 
 	.biome-ui-container {
 		position: absolute;

@@ -1,0 +1,533 @@
+import { Mesh, PlaneGeometry, MeshStandardMaterial, MeshBasicMaterial, InstancedMesh, Object3D, Color, Group, ConeGeometry, BufferGeometry, StaticDrawUsage } from 'three';
+import { createNonEuclideanMaterial, applyNonEuclideanCurve } from '../../materials/NonEuclideanMaterial';
+import { generateMapsFromDiffuse, createForestGround, createCanyonGround, createCityGround, createSavannaGround, createProceduralFacadeTexture } from './BiomeTextures';
+import {
+    createProceduralPineTree, createProceduralDeciduousTree, createProceduralBush,
+    createProceduralRock, createProceduralLog, createProceduralMushroom,
+    createProceduralMesa, createProceduralArch,
+    createProceduralHouse, createProceduralMansion, createProceduralFence,
+    createProceduralAcacia, createProceduralBaobab,
+    bakeGroupToFlatGeometries, createBakedVariants
+} from './BiomeGeometry';
+import { applyWindSway } from './BiomeShaders';
+
+const CLEAR_RADIUS = 25;
+
+// =====================================================================
+// Seeded PRNG (mulberry32) for deterministic placement
+// =====================================================================
+function mulberry32(seed: number) {
+    return function () {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+}
+
+// =====================================================================
+// Instance Data Collector
+// =====================================================================
+interface InstanceRecord {
+    x: number; z: number; rotY: number; scale: number;
+    color: Color;
+    variantIndex: number; // which pre-baked variant to use
+}
+
+interface InstanceBatch {
+    geometry: Map<string, BufferGeometry>; // tag → merged geo (per variant)
+    variants: Array<Map<string, BufferGeometry>>; // all pre-baked variants
+    records: InstanceRecord[];
+    materialConfig: {
+        roughness: number;
+        metalness: number;
+        emissive?: Color;
+        emissiveIntensity?: number;
+        windSway?: boolean;
+        map?: any;
+        emissiveMap?: any;
+    };
+    wireConfig: {
+        matchColor: boolean;
+        opacity: number;
+        sway?: boolean;
+        fixedColor?: number;
+    };
+}
+
+// =====================================================================
+// Helpers
+// =====================================================================
+
+/** Compute the wireframe brightened color from a base color */
+function brightenForWire(base: Color, matchColor: boolean, fixedColor?: number): Color {
+    if (!matchColor && fixedColor !== undefined) {
+        return new Color(fixedColor);
+    }
+    const wire = base.clone();
+    const hsl = { h: 0, s: 0, l: 0 };
+    wire.getHSL(hsl);
+    wire.setHSL(hsl.h, Math.min(1.0, hsl.s * 1.5), Math.min(0.8, hsl.l * 2.0 + 0.2));
+    return wire;
+}
+
+/** Create a shared core MeshStandardMaterial with NonEuclidean + optional wind */
+function makeCoreMaterial(
+    config: InstanceBatch['materialConfig'],
+    timeUniforms: any,
+    baseOpacity: number = 1.0
+): MeshStandardMaterial {
+    const mat = new MeshStandardMaterial({
+        color: 0xffffff, // White base — instanceColor provides full color
+        roughness: config.roughness,
+        metalness: config.metalness,
+        transparent: true,
+        opacity: 0,
+        depthWrite: true,
+        emissive: config.emissive || new Color(0x000000),
+        emissiveIntensity: config.emissiveIntensity || 0,
+        map: config.map || null,
+        emissiveMap: config.emissiveMap || null,
+    });
+    mat.userData = { baseOpacity };
+    applyNonEuclideanCurve(mat);
+    if (config.windSway) applyWindSway(mat, timeUniforms);
+    return mat;
+}
+
+/** Create a shared wireframe MeshBasicMaterial with NonEuclidean + optional wind */
+function makeWireMaterial(
+    wireConfig: InstanceBatch['wireConfig'],
+    timeUniforms: any,
+    baseOpacity: number = 1.0
+): MeshBasicMaterial {
+    const mat = new MeshBasicMaterial({
+        wireframe: true,
+        color: 0xffffff, // White base — instanceColor provides the wire color
+        transparent: true,
+        opacity: wireConfig.opacity,
+        depthWrite: true,
+    });
+    mat.userData = { baseOpacity: wireConfig.opacity };
+    applyNonEuclideanCurve(mat);
+    if (wireConfig.sway) applyWindSway(mat, timeUniforms);
+    return mat;
+}
+
+/** Build InstancedMesh pair (core + wireframe) from collected records */
+function buildInstancedPair(
+    batch: InstanceBatch,
+    biomeIndex: number,
+    biomeZ: number,
+    trackGroup: Group,
+    trackMaterials: any[],
+    timeUniforms: any
+) {
+    if (batch.records.length === 0) return;
+
+    // Group records by variant index, then by geometry tag
+    // For simplicity (and because variants share the same tags), we build
+    // one InstancedMesh per (variantIndex, tag) combination.
+    const byVariantAndTag = new Map<string, { geo: BufferGeometry; records: InstanceRecord[] }>();
+
+    for (const record of batch.records) {
+        const variant = batch.variants[record.variantIndex % batch.variants.length];
+        for (const [tag, geo] of variant) {
+            const key = `${record.variantIndex}_${tag}`;
+            if (!byVariantAndTag.has(key)) {
+                byVariantAndTag.set(key, { geo, records: [] });
+            }
+            byVariantAndTag.get(key)!.records.push(record);
+        }
+    }
+
+    const dummy = new Object3D();
+
+    for (const [key, { geo, records }] of byVariantAndTag) {
+        const tag = key.split('_').slice(1).join('_');
+        const count = records.length;
+
+        // Determine material config based on tag
+        const isLeafOrTrunk = tag === 'leaf' || tag === 'trunk';
+        const matConfig = { ...batch.materialConfig };
+        if (isLeafOrTrunk) matConfig.windSway = true;
+
+        const coreMat = makeCoreMaterial(matConfig, timeUniforms);
+        trackMaterials.push(coreMat);
+
+        const wireMat = makeWireMaterial(
+            { ...batch.wireConfig, sway: isLeafOrTrunk && batch.wireConfig.sway },
+            timeUniforms
+        );
+        trackMaterials.push(wireMat);
+
+        // Core InstancedMesh
+        const coreInst = new InstancedMesh(geo, coreMat, count);
+        coreInst.castShadow = tag !== 'rock' && tag !== 'mushroomStalk';
+        coreInst.receiveShadow = true;
+
+        // Wireframe InstancedMesh (same geometry, wire material)
+        const wireInst = new InstancedMesh(geo, wireMat, count);
+        wireInst.castShadow = false;
+        wireInst.receiveShadow = false;
+
+        for (let i = 0; i < count; i++) {
+            const r = records[i];
+            dummy.position.set(r.x, 0, r.z);
+            dummy.rotation.set(0, r.rotY, 0);
+            dummy.scale.setScalar(r.scale);
+            dummy.updateMatrix();
+
+            coreInst.setMatrixAt(i, dummy.matrix);
+            wireInst.setMatrixAt(i, dummy.matrix);
+
+            coreInst.setColorAt(i, r.color);
+            wireInst.setColorAt(i, brightenForWire(r.color, batch.wireConfig.matchColor, batch.wireConfig.fixedColor));
+        }
+
+        // Freeze buffers
+        coreInst.instanceMatrix.setUsage(StaticDrawUsage);
+        coreInst.instanceMatrix.needsUpdate = true;
+        if (coreInst.instanceColor) {
+            coreInst.instanceColor.setUsage(StaticDrawUsage);
+            coreInst.instanceColor.needsUpdate = true;
+        }
+        wireInst.instanceMatrix.setUsage(StaticDrawUsage);
+        wireInst.instanceMatrix.needsUpdate = true;
+        if (wireInst.instanceColor) {
+            wireInst.instanceColor.setUsage(StaticDrawUsage);
+            wireInst.instanceColor.needsUpdate = true;
+        }
+
+        coreInst.position.set(0, 0, biomeZ);
+        wireInst.position.set(0, 0, biomeZ);
+        coreInst.userData.biomeIndex = biomeIndex;
+        wireInst.userData.biomeIndex = biomeIndex;
+        coreInst.frustumCulled = false;
+        wireInst.frustumCulled = false;
+
+        trackGroup.add(coreInst);
+        trackGroup.add(wireInst);
+    }
+}
+
+// =====================================================================
+// Main Entry Point
+// =====================================================================
+export function populateBiomes(trackGroup: Group, trackMaterials: any[], BIOME_SPACING: number, timeUniforms: any) {
+    const facadeMaps = createProceduralFacadeTexture();
+    const rng = mulberry32(42); // Deterministic seed
+
+    // ---------------------------------------------------------------
+    // Pre-bake all geometry variants (done once at startup)
+    // ---------------------------------------------------------------
+    const pineGeos = bakeGroupToFlatGeometries(createProceduralPineTree());
+    const deciduousGeos = bakeGroupToFlatGeometries(createProceduralDeciduousTree());
+    const bushVariants = createBakedVariants(createProceduralBush, 4);
+    const rockVariants = createBakedVariants(createProceduralRock, 4);
+    const logVariants = createBakedVariants(createProceduralLog, 3);
+    const mushroomGeos = bakeGroupToFlatGeometries(createProceduralMushroom());
+
+    const mesaVariants = createBakedVariants(createProceduralMesa, 3);
+    const archGeos = bakeGroupToFlatGeometries(createProceduralArch());
+
+    const houseVariants = createBakedVariants(createProceduralHouse, 4);
+    const mansionVariants = createBakedVariants(createProceduralMansion, 3);
+    const fenceGeos = bakeGroupToFlatGeometries(createProceduralFence());
+
+    const acaciaVariants = createBakedVariants(createProceduralAcacia, 5);
+    const baobabVariants = createBakedVariants(createProceduralBaobab, 4);
+
+    // ---------------------------------------------------------------
+    // Build each biome
+    // ---------------------------------------------------------------
+    const biomesData = [
+        { name: 'Forest',  color: 0x1B3320 },
+        { name: 'Canyon',  color: 0x5C4033 },
+        { name: 'City',    color: 0x222222 },
+        { name: 'Savanna', color: 0x111116 },
+    ];
+
+    biomesData.forEach((biome, index) => {
+        const startMatIndex = trackMaterials.length;
+        const startMeshIndex = trackGroup.children.length;
+        const biomeZ = -(index * BIOME_SPACING);
+
+        // ---- Ground plane (unchanged) ----
+        const geo = new PlaneGeometry(800, 4500, 64, 128);
+        geo.rotateX(-Math.PI / 2);
+
+        let diffuseTex = null;
+        if (biome.name === 'Forest') diffuseTex = createForestGround();
+        else if (biome.name === 'Canyon') diffuseTex = createCanyonGround();
+        else if (biome.name === 'City') diffuseTex = createCityGround();
+        else if (biome.name === 'Savanna') diffuseTex = createSavannaGround();
+
+        let matProps: any = { color: 0xffffff, roughness: 1.0, metalness: 0.1, wireframe: false };
+        if (diffuseTex) {
+            const diffuseCanvas = diffuseTex.image;
+            const maps = generateMapsFromDiffuse(diffuseCanvas);
+            diffuseTex.repeat.set(8, 8);
+            maps.normalMap.repeat.set(8, 8);
+            maps.bumpMap.repeat.set(8, 8);
+            matProps.map = diffuseTex;
+            matProps.normalMap = maps.normalMap;
+            matProps.roughnessMap = maps.bumpMap;
+            matProps.bumpMap = maps.bumpMap;
+            matProps.bumpScale = 0.5;
+        }
+
+        const groundMat = createNonEuclideanMaterial(matProps);
+        groundMat.transparent = true;
+        trackMaterials.push(groundMat);
+
+        const groundMesh = new Mesh(geo, groundMat);
+        groundMesh.position.z = biomeZ;
+        groundMesh.receiveShadow = true;
+        groundMesh.userData.isGround = true;
+        trackGroup.add(groundMesh);
+
+        // ---- Biome-specific instanced objects ----
+        if (biome.name === 'Forest') {
+            // Grass (already instanced, keep as-is)
+            const grassCount = 20000;
+            const grassGeo = new ConeGeometry(0.15, 2, 3);
+            grassGeo.translate(0, 1, 0);
+            const grassMat = new MeshStandardMaterial({ color: 0xcca844, roughness: 1.0, transparent: true, opacity: 0 });
+            grassMat.userData = { baseOpacity: 0.9 };
+            applyNonEuclideanCurve(grassMat);
+            applyWindSway(grassMat, timeUniforms);
+            trackMaterials.push(grassMat);
+            const grassInst = new InstancedMesh(grassGeo, grassMat, grassCount);
+            grassInst.castShadow = false; // Perf: grass shadow is negligible
+            grassInst.receiveShadow = true;
+            const grassDummy = new Object3D();
+            for (let i = 0; i < grassCount; i++) {
+                const gx = (rng() - 0.5) * 500;
+                const gz = (rng() - 0.5) * 1400;
+                if (Math.sqrt(gx * gx + gz * gz) < CLEAR_RADIUS) continue;
+                grassDummy.position.set(gx, 0, gz);
+                grassDummy.rotation.y = rng() * Math.PI;
+                grassDummy.rotation.x = (rng() - 0.5) * 0.2;
+                grassDummy.scale.setScalar(0.5 + rng() * 1.0);
+                grassDummy.updateMatrix();
+                grassInst.setMatrixAt(i, grassDummy.matrix);
+            }
+            grassInst.instanceMatrix.setUsage(StaticDrawUsage);
+            grassInst.instanceMatrix.needsUpdate = true;
+            grassInst.position.set(0, 0, biomeZ);
+            grassInst.userData.biomeIndex = index;
+            grassInst.frustumCulled = false;
+            trackGroup.add(grassInst);
+
+            // Collect forest object placement data
+            const pineRecords: InstanceRecord[] = [];
+            const deciduousRecords: InstanceRecord[] = [];
+            const bushRecords: InstanceRecord[] = [];
+            const rockRecords: InstanceRecord[] = [];
+            const logRecords: InstanceRecord[] = [];
+            const mushroomRecords: InstanceRecord[] = [];
+
+            for (let x = -200; x <= 200; x += 15) {
+                for (let z = -600; z <= 600; z += 15) {
+                    if (Math.sqrt(x * x + z * z) < CLEAR_RADIUS) continue;
+                    const pathCurve = Math.sin(z * 0.02) * 30;
+                    const distToPath = Math.abs(x - pathCurve);
+                    if (distToPath < 10) continue;
+                    if (rng() > 0.5) continue;
+
+                    const r = rng();
+                    const px = x + (rng() - 0.5) * 8;
+                    const pz = z + (rng() - 0.5) * 8;
+                    const rotY = rng() * Math.PI * 2;
+
+                    if (r < 0.4) {
+                        const baseColor = new Color().setHSL(0.35 + (rng() - 0.5) * 0.1, 0.8, 0.2 + rng() * 0.1);
+                        pineRecords.push({ x: px, z: pz, rotY, scale: 4.0 + rng() * 4.0, color: baseColor, variantIndex: 0 });
+                    } else if (r < 0.6) {
+                        const baseColor = new Color().setHSL(0.35 + (rng() - 0.5) * 0.1, 0.8, 0.2 + rng() * 0.1);
+                        deciduousRecords.push({ x: px, z: pz, rotY, scale: 3.5 + rng() * 4.0, color: baseColor, variantIndex: 0 });
+                    } else if (r < 0.75) {
+                        const baseColor = new Color().setHSL(0.35 + (rng() - 0.5) * 0.1, 0.8, 0.2 + rng() * 0.1);
+                        bushRecords.push({ x: px, z: pz, rotY, scale: 1.5 + rng() * 2.5, color: baseColor, variantIndex: Math.floor(rng() * 4) });
+                    } else if (r < 0.9) {
+                        const baseColor = new Color().setHSL(0.0, 0.0, 0.3 + rng() * 0.2);
+                        rockRecords.push({ x: px, z: pz, rotY, scale: 1.5 + rng() * 4.5, color: baseColor, variantIndex: Math.floor(rng() * 4) });
+                    } else if (r < 0.95) {
+                        const baseColor = new Color().setHSL(0.06 + (rng() - 0.5) * 0.05, 0.7, 0.2 + rng() * 0.1);
+                        logRecords.push({ x: px, z: pz, rotY, scale: 2.0 + rng() * 2.0, color: baseColor, variantIndex: Math.floor(rng() * 3) });
+                    } else {
+                        const baseColor = new Color().setHSL(0.5 + rng() * 0.4, 0.9, 0.5 + rng() * 0.2);
+                        mushroomRecords.push({ x: px, z: pz, rotY, scale: 2.0 + rng() * 2.0, color: baseColor, variantIndex: 0 });
+                    }
+                }
+            }
+
+            // Build instanced batches
+            const forestBatches: InstanceBatch[] = [
+                { geometry: pineGeos, variants: [pineGeos], records: pineRecords, materialConfig: { roughness: 0.9, metalness: 0, windSway: true }, wireConfig: { matchColor: true, opacity: 0.15, sway: true } },
+                { geometry: deciduousGeos, variants: [deciduousGeos], records: deciduousRecords, materialConfig: { roughness: 0.9, metalness: 0, windSway: true }, wireConfig: { matchColor: true, opacity: 0.15, sway: true } },
+                { geometry: bushVariants[0], variants: bushVariants, records: bushRecords, materialConfig: { roughness: 0.9, metalness: 0, windSway: true }, wireConfig: { matchColor: true, opacity: 0.15, sway: true } },
+                { geometry: rockVariants[0], variants: rockVariants, records: rockRecords, materialConfig: { roughness: 0.9, metalness: 0 }, wireConfig: { matchColor: true, opacity: 0.15 } },
+                { geometry: logVariants[0], variants: logVariants, records: logRecords, materialConfig: { roughness: 0.9, metalness: 0, windSway: true }, wireConfig: { matchColor: true, opacity: 0.15, sway: true } },
+                { geometry: mushroomGeos, variants: [mushroomGeos], records: mushroomRecords, materialConfig: { roughness: 0.9, metalness: 0, emissive: new Color(0xffffff), emissiveIntensity: 1.5 }, wireConfig: { matchColor: true, opacity: 0.15 } },
+            ];
+
+            for (const batch of forestBatches) {
+                buildInstancedPair(batch, index, biomeZ, trackGroup, trackMaterials, timeUniforms);
+            }
+
+        } else if (biome.name === 'Canyon') {
+            const mesaRecords: InstanceRecord[] = [];
+            const archRecords: InstanceRecord[] = [];
+            const canyonRockRecords: InstanceRecord[] = [];
+
+            for (let x = -200; x <= 200; x += 15) {
+                for (let z = -600; z <= 600; z += 15) {
+                    if (Math.sqrt(x * x + z * z) < CLEAR_RADIUS) continue;
+                    const pathCurve = Math.sin(z * 0.02) * 20;
+                    const distToPath = Math.abs(x - pathCurve);
+                    if (distToPath < 12) continue;
+                    if (rng() > 0.45) continue;
+
+                    const r = rng();
+                    const px = x + (rng() - 0.5) * 5;
+                    const pz = z + (rng() - 0.5) * 5;
+                    const rotY = rng() * Math.PI * 2;
+                    const rockColor = new Color().setHSL(0.05 + (rng() - 0.5) * 0.08, 0.6 + rng() * 0.3, 0.4 + rng() * 0.2);
+
+                    if (r < 0.3) {
+                        mesaRecords.push({ x: px, z: pz, rotY, scale: 3.0 + rng() * 2.0, color: rockColor, variantIndex: Math.floor(rng() * 3) });
+                    } else if (r < 0.5 && distToPath > 20) {
+                        archRecords.push({ x: px, z: pz, rotY, scale: 4.0 + rng() * 3.0, color: rockColor, variantIndex: 0 });
+                    } else {
+                        canyonRockRecords.push({ x: px, z: pz, rotY, scale: 2.0 + rng() * 3.0, color: rockColor, variantIndex: Math.floor(rng() * 4) });
+                    }
+                }
+            }
+
+            const canyonBatches: InstanceBatch[] = [
+                { geometry: mesaVariants[0], variants: mesaVariants, records: mesaRecords, materialConfig: { roughness: 1.0, metalness: 0 }, wireConfig: { matchColor: true, opacity: 0.25 } },
+                { geometry: archGeos, variants: [archGeos], records: archRecords, materialConfig: { roughness: 1.0, metalness: 0 }, wireConfig: { matchColor: true, opacity: 0.25 } },
+                { geometry: rockVariants[0], variants: rockVariants, records: canyonRockRecords, materialConfig: { roughness: 1.0, metalness: 0 }, wireConfig: { matchColor: true, opacity: 0.25 } },
+            ];
+
+            for (const batch of canyonBatches) {
+                buildInstancedPair(batch, index, biomeZ, trackGroup, trackMaterials, timeUniforms);
+            }
+
+        } else if (biome.name === 'City') {
+            const houseRecords: InstanceRecord[] = [];
+            const mansionRecords: InstanceRecord[] = [];
+            const fenceRecords: InstanceRecord[] = [];
+
+            for (let row = -60; row <= 60; row++) {
+                for (const colOffset of [-220, -170, -120, -80, -40, 40, 80, 120, 170, 220]) {
+                    const x = colOffset + (rng() - 0.5) * 10;
+                    const z = row * 20 + (rng() - 0.5) * 4;
+                    if (Math.sqrt(x * x + z * z) < CLEAR_RADIUS + 20) continue;
+                    if (row === 0 && Math.abs(colOffset) < 100) continue;
+
+                    const rand = rng();
+                    const rotY = colOffset < 0 ? Math.PI / 2 : -Math.PI / 2;
+                    const scale = 1.2 + rng() * 0.2;
+
+                    // Buildings get a randomized warm color
+                    const buildingColor = new Color().setHSL(0.1 + rng() * 0.1, 0.4, 0.3 + rng() * 0.3);
+
+                    if (rand < 0.15) {
+                        mansionRecords.push({ x, z, rotY, scale, color: buildingColor, variantIndex: Math.floor(rng() * 3) });
+                    } else if (rand < 0.85) {
+                        houseRecords.push({ x, z, rotY, scale, color: buildingColor, variantIndex: Math.floor(rng() * 4) });
+                    } else {
+                        fenceRecords.push({ x, z, rotY, scale, color: buildingColor, variantIndex: 0 });
+                    }
+                }
+            }
+
+            const cityBatches: InstanceBatch[] = [
+                { geometry: houseVariants[0], variants: houseVariants, records: houseRecords, materialConfig: { roughness: 0.8, metalness: 0.1, map: facadeMaps.diffuseMap, emissiveMap: facadeMaps.emissiveMap, emissive: new Color(0xffaa55), emissiveIntensity: 0.8 }, wireConfig: { matchColor: true, opacity: 0.45 } },
+                { geometry: mansionVariants[0], variants: mansionVariants, records: mansionRecords, materialConfig: { roughness: 0.8, metalness: 0.1, map: facadeMaps.diffuseMap, emissiveMap: facadeMaps.emissiveMap, emissive: new Color(0xffaa55), emissiveIntensity: 0.8 }, wireConfig: { matchColor: true, opacity: 0.45 } },
+                { geometry: fenceGeos, variants: [fenceGeos], records: fenceRecords, materialConfig: { roughness: 0.8, metalness: 0.1 }, wireConfig: { matchColor: true, opacity: 0.45 } },
+            ];
+
+            for (const batch of cityBatches) {
+                buildInstancedPair(batch, index, biomeZ, trackGroup, trackMaterials, timeUniforms);
+            }
+
+        } else if (biome.name === 'Savanna') {
+            // Grass (same as forest pattern)
+            const grassCount = 18000;
+            const grassGeo = new ConeGeometry(0.15, 2, 3);
+            grassGeo.translate(0, 1, 0);
+            const grassMat = new MeshStandardMaterial({ color: 0xcca844, roughness: 1.0, transparent: true, opacity: 0 });
+            grassMat.userData = { baseOpacity: 0.9 };
+            applyNonEuclideanCurve(grassMat);
+            applyWindSway(grassMat, timeUniforms);
+            trackMaterials.push(grassMat);
+            const grassInst = new InstancedMesh(grassGeo, grassMat, grassCount);
+            grassInst.castShadow = false;
+            grassInst.receiveShadow = true;
+            const grassDummy = new Object3D();
+            for (let i = 0; i < grassCount; i++) {
+                const gx = (rng() - 0.5) * 500;
+                const gz = (rng() - 0.5) * 1400;
+                if (Math.sqrt(gx * gx + gz * gz) < CLEAR_RADIUS) continue;
+                grassDummy.position.set(gx, 0, gz);
+                grassDummy.rotation.y = rng() * Math.PI;
+                grassDummy.rotation.x = (rng() - 0.5) * 0.2;
+                grassDummy.scale.setScalar(0.5 + rng() * 1.0);
+                grassDummy.updateMatrix();
+                grassInst.setMatrixAt(i, grassDummy.matrix);
+            }
+            grassInst.instanceMatrix.setUsage(StaticDrawUsage);
+            grassInst.instanceMatrix.needsUpdate = true;
+            grassInst.position.set(0, 0, biomeZ);
+            grassInst.userData.biomeIndex = index;
+            grassInst.frustumCulled = false;
+            trackGroup.add(grassInst);
+
+            // Acacia and Baobab
+            const acaciaRecords: InstanceRecord[] = [];
+            const baobabRecords: InstanceRecord[] = [];
+
+            for (let i = 0; i < 250; i++) {
+                const x = (rng() - 0.5) * 500;
+                const z = (rng() - 0.5) * 1200;
+                if (Math.sqrt(x * x + z * z) <= CLEAR_RADIUS) continue;
+
+                const rand = rng();
+                const rotY = rng() * Math.PI * 2;
+
+                if (rand < 0.6) {
+                    const plantColor = new Color().setHSL(0.12, 0.4, 0.35);
+                    acaciaRecords.push({ x, z, rotY, scale: 3.0 + rng() * 2.0, color: plantColor, variantIndex: Math.floor(rng() * 5) });
+                } else {
+                    const plantColor = new Color().setHSL(0.08, 0.3, 0.25);
+                    baobabRecords.push({ x, z, rotY, scale: 2.5 + rng() * 1.5, color: plantColor, variantIndex: Math.floor(rng() * 4) });
+                }
+            }
+
+            const savannaBatches: InstanceBatch[] = [
+                { geometry: acaciaVariants[0], variants: acaciaVariants, records: acaciaRecords, materialConfig: { roughness: 0.9, metalness: 0, windSway: true }, wireConfig: { matchColor: false, opacity: 0.2, sway: true, fixedColor: 0x5effa4 } },
+                { geometry: baobabVariants[0], variants: baobabVariants, records: baobabRecords, materialConfig: { roughness: 0.9, metalness: 0, windSway: true }, wireConfig: { matchColor: false, opacity: 0.2, sway: true, fixedColor: 0x5effa4 } },
+            ];
+
+            for (const batch of savannaBatches) {
+                buildInstancedPair(batch, index, biomeZ, trackGroup, trackMaterials, timeUniforms);
+            }
+        }
+
+        // Tag all new materials and meshes with biome index
+        for (let i = startMatIndex; i < trackMaterials.length; i++) {
+            if (!trackMaterials[i].userData) trackMaterials[i].userData = {};
+            trackMaterials[i].userData.biomeIndex = index;
+        }
+        for (let i = startMeshIndex; i < trackGroup.children.length; i++) {
+            trackGroup.children[i].traverse((child) => {
+                child.frustumCulled = false;
+                child.userData.biomeIndex = index;
+            });
+        }
+    });
+}

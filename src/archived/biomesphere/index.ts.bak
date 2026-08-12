@@ -11,6 +11,7 @@ import { WeatherSystem } from './BiomeWeather';
 import { createDebrisSystem } from './BiomeDebris';
 import { FisheyeShader, CRTShutdownShader, FadeBlackShader } from './BiomeShaders';
 import { BiomeUI } from './BiomeUI';
+import { showBriefing } from './BiomeBriefing';
 
 // Provide dummies to satisfy old index.astro imports
 let onScrollProgress: ((p: number) => void) | null = null;
@@ -47,8 +48,10 @@ export function setupBiomeSphere() {
     populateBiomes(trackGroup, trackMaterials, BIOME_SPACING, timeUniforms);
     const debrisSystem = createDebrisSystem(trackGroup, trackMaterials, BIOME_SPACING);
     
-    const ui = new BiomeUI(canvas.parentElement || document.body);
+    const uiContainer = canvas.parentElement || document.body;
+    const ui = new BiomeUI(uiContainer);
     const biomeState = new BiomeState();
+    const briefing = showBriefing(uiContainer);
     const cleanupInput = setupBiomeInput(biomeState);
     
     biomeState.subscribe(() => {
@@ -56,7 +59,7 @@ export function setupBiomeSphere() {
     });
 
     ui.update(biomeState.currentIndex, BIOME_NAMES[biomeState.currentIndex]);
-    ui.show();
+    // UI remains hidden until briefing completes
 
     const ambientLight = new AmbientLight(0xffffff, 2.2);
     scene.add(ambientLight);
@@ -200,7 +203,7 @@ export function setupBiomeSphere() {
         }
 
         let transitionBlackness = Math.min(1.0, Math.max(entryEase, exitEase) * 1.2);
-        if (isFirstStart) {
+        if (isFirstStart || isBriefing) {
             transitionBlackness = 1.0;
         } else if (biomeState.transitionPhase === 'FINAL_EXIT') {
             transitionBlackness = crtShutdown;
@@ -337,27 +340,35 @@ export function setupBiomeSphere() {
     };
 
     let isFirstStart = true;
+    let isBriefing = true; // Start in briefing mode immediately
+    
+    briefing.onComplete = () => {
+        isBriefing = false;
+        isFirstStart = false;
+        biomeState.startInitialEntry();
+        ui.show();
+    };
+
     onScrollProgress = (p: number) => {
-        if (p >= 0.0 && isFirstStart) {
-            isFirstStart = false;
-            biomeState.currentIndex = 0;
-            biomeState.targetIndex = 0;
-            biomeState.startInitialEntry();
-        }
+        // We no longer trigger start off scroll progress.
     };
 
     const start = () => {
         if (isRunning) return;
         isRunning = true;
         
-        if (!isFirstStart && !biomeState.isTransitioning) {
+        if (isFirstStart && isBriefing) {
+            biomeState.currentIndex = 0;
+            biomeState.targetIndex = 0;
+            ui.update(0, BIOME_NAMES[0]);
+            briefing.show();
+        } else if (!isFirstStart && !biomeState.isTransitioning) {
             biomeState.currentIndex = 0;
             biomeState.targetIndex = 0;
             biomeState.transitionPhase = 'IDLE';
+            ui.update(0, BIOME_NAMES[0]);
+            ui.show();
         }
-        
-        ui.update(0, BIOME_NAMES[0]);
-        ui.show();
         
         lastTime = performance.now();
         tick();
@@ -373,6 +384,7 @@ export function setupBiomeSphere() {
         stop();
         cleanupInput();
         ui.destroy();
+        briefing.destroy();
         window.removeEventListener('resize', resize);
         window.removeEventListener('pointermove', onPointerMove);
         trackMaterials.forEach(mat => {
@@ -391,11 +403,16 @@ export function setupBiomeSphere() {
         scene.clear();
     };
 
+    const biomeZone = canvas.closest('.biome-zone');
     const observer = new IntersectionObserver(([entry]) => {
         if (entry.isIntersecting) start();
         else stop();
     }, { threshold: 0.0 });
-    observer.observe(canvas);
+    if (biomeZone) {
+        observer.observe(biomeZone);
+    } else {
+        observer.observe(canvas);
+    }
 
     return { start, stop, destroy: () => { observer.disconnect(); destroy(); }, resize };
 }

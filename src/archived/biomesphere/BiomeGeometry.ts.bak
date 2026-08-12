@@ -1,4 +1,5 @@
-import { BufferGeometry, Group, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, ConeGeometry, BoxGeometry, Mesh, TorusGeometry } from 'three';
+import { BufferGeometry, Group, CylinderGeometry, DodecahedronGeometry, IcosahedronGeometry, ConeGeometry, BoxGeometry, Mesh, TorusGeometry, Matrix4, Vector3 } from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export function displaceGeometry(geometry: BufferGeometry, intensity: number, scale: number = 1.0) {
     const positions = geometry.attributes.position;
@@ -239,4 +240,79 @@ export function createProceduralBaobab(): Group {
     }
     
     return group;
+}
+
+// =====================================================================
+// Geometry Baking Utilities for Instancing
+// =====================================================================
+
+/** Determine the semantic tag from a mesh's userData flags. */
+function getUserDataTag(userData: Record<string, any>): string {
+    if (userData.isTrunk) return 'trunk';
+    if (userData.isLeaf) return 'leaf';
+    if (userData.isRock) return 'rock';
+    if (userData.isMushroomStalk) return 'mushroomStalk';
+    if (userData.isMushroomCap) return 'mushroomCap';
+    if (userData.isBuilding) return 'building';
+    if (userData.isRoof) return 'roof';
+    return 'unknown';
+}
+
+/**
+ * Takes a procedural Group (potentially with nested hierarchies like Acacia),
+ * computes each child Mesh's world matrix, applies it to the geometry vertices,
+ * and merges all geometries sharing the same userData tag into single flat
+ * BufferGeometries. The result is a Map<tag, BufferGeometry> ready for InstancedMesh.
+ */
+export function bakeGroupToFlatGeometries(group: Group): Map<string, BufferGeometry> {
+    // Force world matrix computation through the entire hierarchy
+    group.updateMatrixWorld(true);
+
+    const collected = new Map<string, BufferGeometry[]>();
+
+    group.traverse((child) => {
+        if (!(child as Mesh).isMesh) return;
+        if (child.userData.isTronWireframe) return;
+
+        const mesh = child as Mesh;
+        const tag = getUserDataTag(mesh.userData);
+
+        // Clone geometry so we don't mutate the original
+        const geo = mesh.geometry.clone();
+
+        // Apply the mesh's accumulated world transform to the geometry vertices
+        geo.applyMatrix4(mesh.matrixWorld);
+
+        if (!collected.has(tag)) collected.set(tag, []);
+        collected.get(tag)!.push(geo);
+    });
+
+    // Merge all geometries per tag into a single BufferGeometry
+    const result = new Map<string, BufferGeometry>();
+    for (const [tag, geos] of collected) {
+        if (geos.length === 1) {
+            result.set(tag, geos[0]);
+        } else {
+            const merged = mergeGeometries(geos, false);
+            if (merged) {
+                result.set(tag, merged);
+            }
+            // Dispose the individual clones
+            geos.forEach(g => g.dispose());
+        }
+    }
+
+    return result;
+}
+
+/**
+ * Pre-bakes N variants of a procedural geometry constructor.
+ * Used for constructors that have internal Math.random() (Bush, Rock, Log,
+ * Acacia, Baobab, House, Mansion) to maintain visual variety across instances.
+ */
+export function createBakedVariants(
+    factory: () => Group,
+    count: number
+): Array<Map<string, BufferGeometry>> {
+    return Array.from({ length: count }, () => bakeGroupToFlatGeometries(factory()));
 }

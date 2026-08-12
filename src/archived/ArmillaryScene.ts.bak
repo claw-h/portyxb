@@ -1,0 +1,146 @@
+import * as THREE from 'three';
+import { createCore } from './armillary/core';
+import { createRings } from './armillary/rings';
+import { setupHoverPreview } from './armillary/hoverPreview';
+import { setupCascade } from './armillary/cascade';
+import { tweenManager } from '../utils/animation';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+export function setupArmillaryScene() {
+    const zone = document.querySelector('.vitruvian-zone');
+    const canvas = document.getElementById('armillary-canvas') as HTMLCanvasElement | null;
+    
+    if (!zone || !canvas) return { destroy: () => {} };
+
+    // Setup Three.js scene
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    const scene = new THREE.Scene();
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+    // Looking down slightly at the center
+    camera.position.set(0, 15, 10);
+    camera.lookAt(0, 0, 0);
+
+    // Setup Post-Processing (Bloom)
+    const renderScene = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    bloomPass.threshold = 0.2;
+    bloomPass.strength = 1.2; // Increase bloom strength
+    bloomPass.radius = 0.5;
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(renderScene);
+    composer.addPass(bloomPass);
+
+    // Lights
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+    scene.add(ambientLight);
+
+    const pointLight = new THREE.PointLight(0xffffff, 1, 50);
+    pointLight.position.set(0, 5, 0);
+    scene.add(pointLight);
+
+    // Add Core and Rings
+    const core = createCore();
+    scene.add(core.mesh);
+
+    const rings = createRings();
+    scene.add(rings.group);
+
+    // Setup Hover and Cascade
+    const hoverPreview = setupHoverPreview(camera, rings.rings, renderer.domElement);
+    const cascade = setupCascade(scene, rings, core.mesh);
+
+    // Click to lock & cascade
+    const onClick = () => {
+        const state = hoverPreview.getState();
+        if (state.activeId) {
+            hoverPreview.setCascadeActive(true);
+            cascade.triggerCascade(state.activeId, () => {
+                hoverPreview.setCascadeActive(false);
+            });
+        }
+    };
+    renderer.domElement.addEventListener('click', onClick);
+
+    // Parallax mouse movement
+    let targetCameraX = 0;
+    let targetCameraZ = 10;
+    const onMouseMove = (e: MouseEvent) => {
+        const x = (e.clientX / window.innerWidth - 0.5) * 2; // -1 to 1
+        const y = (e.clientY / window.innerHeight - 0.5) * 2; // -1 to 1
+        targetCameraX = x * 2;
+        targetCameraZ = 10 + y * 2;
+    };
+    window.addEventListener('mousemove', onMouseMove);
+
+    let animationFrameId: number;
+    const clock = new THREE.Clock();
+
+    const animate = () => {
+        animationFrameId = requestAnimationFrame(animate);
+        const elapsedTime = clock.getElapsedTime();
+        const timeNow = performance.now();
+        
+        core.update(elapsedTime);
+        rings.rings.forEach(ring => {
+            // Only rotate if not actively cascading/aligned (we check if hover/cascade tween has hijacked rotation? Actually, we'll just add rotation to the base)
+            if (!(ring as any).isAligned) {
+                ring.mesh.rotateOnAxis(ring.baseRotationAxis, ring.rotationSpeed * 0.05);
+            }
+        });
+        tweenManager.update(timeNow);
+        
+        // Smooth camera drift
+        camera.position.x += (targetCameraX - camera.position.x) * 0.05;
+        camera.position.z += (targetCameraZ - camera.position.z) * 0.05;
+        camera.lookAt(0, 0, 0);
+        
+        composer.render();
+    };
+
+    // Use IntersectionObserver to gate RAF loop (Performance note from prompt)
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                if (!animationFrameId) animate();
+            } else {
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = 0;
+                }
+            }
+        });
+    }, { threshold: 0 });
+    observer.observe(zone);
+
+    const onResize = () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+    };
+    window.addEventListener('resize', onResize);
+
+    return {
+        destroy: () => {
+            observer.disconnect();
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('resize', onResize);
+            renderer.domElement.removeEventListener('click', onClick);
+            
+            // Dispose logic
+            hoverPreview.dispose();
+            cascade.dispose();
+            core.dispose();
+            rings.dispose();
+            composer.dispose();
+            renderer.dispose();
+        }
+    };
+}
