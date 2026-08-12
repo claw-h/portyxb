@@ -426,6 +426,32 @@ export function setupDossierScene() {
             window.removeEventListener('resize', onResize);
             window.removeEventListener('mousemove', onMouseMove);
             canvas.removeEventListener('click', onClick);
+            
+            // Dispose of dynamically generated resources to prevent memory leaks
+            allPages.forEach(page => {
+                const mesh = page.mesh as THREE.Mesh;
+                if (mesh.geometry) mesh.geometry.dispose();
+                if (mesh.material) {
+                    const mat = mesh.material as THREE.MeshPhysicalMaterial;
+                    if (mat.map) mat.map.dispose();
+                    if (mat.emissiveMap) mat.emissiveMap.dispose();
+                    mat.dispose();
+                }
+            });
+
+            hitboxes.forEach(hitbox => {
+                if (hitbox.geometry) hitbox.geometry.dispose();
+                if (hitbox.material) {
+                    if (Array.isArray(hitbox.material)) {
+                        hitbox.material.forEach(m => m.dispose());
+                    } else {
+                        hitbox.material.dispose();
+                    }
+                }
+            });
+
+            trackingPlaneGeom.dispose();
+            
             composer.dispose();
             renderer.dispose();
         }

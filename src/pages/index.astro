@@ -147,6 +147,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 	let dossierScene: { destroy: () => void } | null = null;
 
 	document.addEventListener('DOMContentLoaded', () => {
+		let dossierInit = false;
 		const zones = document.querySelectorAll('.dossier-zone');
 		const observer = new IntersectionObserver((entries) => {
 			let isAnySceneVisible = false;
@@ -155,7 +156,10 @@ import DossierIndex from '../components/DossierIndex.astro';
 					isAnySceneVisible = true;
 					const zone = entry.target;
 					if (zone.classList.contains('dossier-zone')) {
-						if (!dossierScene) initDossierScene();
+						if (!dossierInit) {
+							dossierInit = true;
+							initDossierScene();
+						}
 					}
 				}
 			});
