@@ -8,8 +8,9 @@ import { attachTabToPage } from './dossier/DossierTabs';
 import { spotlightConfig, spotlightUniforms } from './dossier/shaders';
 import { createProjectTexture } from './dossier/DossierPageContent';
 import { categories } from '../data/categories';
+import { createLoopController } from '../utils/canvas';
 
-export function setupDossierScene() {
+export async function setupDossierScene() {
     const zone = document.querySelector('.dossier-zone');
     const canvas = document.getElementById('dossier-canvas') as HTMLCanvasElement | null;
     
@@ -96,10 +97,13 @@ export function setupDossierScene() {
     let tabIndex = 0;
     const categoryStartIndices: Record<string, number> = {};
 
-    categories.forEach(cat => {
+    for (const cat of categories) {
         categoryStartIndices[cat.id] = allPages.length;
 
-        cat.projects.forEach((proj, pIdx) => {
+        for (let pIdx = 0; pIdx < cat.projects.length; pIdx++) {
+            const proj = cat.projects[pIdx];
+            await new Promise(r => setTimeout(r, 0)); // Yield to prevent TBT spikes
+            
             const pageId = `${cat.id}-${pIdx}`;
             const page = dossier.createPage(pageId, pageZOffset);
             
@@ -109,7 +113,7 @@ export function setupDossierScene() {
             pMat.emissive = new THREE.Color(0xffffff);
             pMat.emissiveIntensity = 1.5;
             
-            page.uniforms.tGeometry = { value: geomTex };
+            (page.uniforms as any).tGeometry = { value: geomTex };
 
             if (pIdx === 0) {
                 const { hitbox } = attachTabToPage(
@@ -128,8 +132,8 @@ export function setupDossierScene() {
             page.group.userData = { project: proj, category: cat, baseZ: pageZOffset };
             allPages.push(page);
             pageZOffset -= 0.001;
-        });
-    });
+        }
+    }
 
     dossier.frontCover.rotation.y = 0;
     dossier.frontCover.userData = { baseZ: 0.15 };
@@ -301,14 +305,25 @@ export function setupDossierScene() {
     };
     canvas.addEventListener('click', onClick);
 
-    let animationFrameId: number;
     const clock = new THREE.Clock();
     let entranceFinished = false;
+    let hasAppeared = false;
 
-    const animate = () => {
-        animationFrameId = requestAnimationFrame(animate);
-        const timeNow = performance.now();
+    const animate = (timeNow: number) => {
         const delta = clock.getDelta();
+        
+        if (!hasAppeared) {
+            hasAppeared = true;
+            tweenManager.to({
+                from: 0, to: 1, duration: 1200, easing: Easing.easeOutCubic,
+                onUpdate: (v) => {
+                    const s = 0.85 + v * 0.15;
+                    dossier.group.scale.set(s, s, s);
+                    dossier.group.position.y = -3 * (1 - v);
+                },
+                onComplete: () => { entranceFinished = true; }
+            });
+        }
         
         tweenManager.update(timeNow);
 
@@ -322,8 +337,9 @@ export function setupDossierScene() {
 
         // Update uTime for all dynamic materials
         allPages.forEach(page => {
-            if (page.uniforms && page.uniforms.uTime) {
-                page.uniforms.uTime.value += delta;
+            const uniforms = page.uniforms as any;
+            if (uniforms && uniforms.uTime) {
+                uniforms.uTime.value += delta;
             }
         });
         
@@ -382,34 +398,7 @@ export function setupDossierScene() {
         composer.render();
     };
 
-    let hasAppeared = false;
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                clock.start();
-                if (!animationFrameId) animate();
-
-                if (!hasAppeared) {
-                    hasAppeared = true;
-                    tweenManager.to({
-                        from: 0, to: 1, duration: 1200, easing: Easing.easeOutCubic,
-                        onUpdate: (v) => {
-                            const s = 0.85 + v * 0.15;
-                            dossier.group.scale.set(s, s, s);
-                            dossier.group.position.y = -3 * (1 - v);
-                        },
-                        onComplete: () => { entranceFinished = true; }
-                    });
-                }
-            } else {
-                if (animationFrameId) {
-                    cancelAnimationFrame(animationFrameId);
-                    animationFrameId = 0;
-                }
-            }
-        });
-    }, { threshold: 0 });
-    observer.observe(zone);
+    const loop = createLoopController(zone, animate);
 
     const onResize = () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -421,14 +410,17 @@ export function setupDossierScene() {
 
     return {
         destroy: () => {
-            observer.disconnect();
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            loop.destroy();
             window.removeEventListener('resize', onResize);
             window.removeEventListener('mousemove', onMouseMove);
             canvas.removeEventListener('click', onClick);
             
             // Dispose of dynamically generated resources to prevent memory leaks
             allPages.forEach(page => {
+                const uniforms = page.uniforms as any;
+                if (uniforms && uniforms.tGeometry && uniforms.tGeometry.value) {
+                    uniforms.tGeometry.value.dispose();
+                }
                 const mesh = page.mesh as THREE.Mesh;
                 if (mesh.geometry) mesh.geometry.dispose();
                 if (mesh.material) {
