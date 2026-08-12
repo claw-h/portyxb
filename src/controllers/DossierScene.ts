@@ -17,9 +17,9 @@ export async function setupDossierScene() {
     if (!zone || !canvas) return { destroy: () => {} };
 
     // Setup Three.js scene
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: true, powerPreference: 'high-performance' });
     renderer.setClearColor(0x020508, 1);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -137,6 +137,13 @@ export async function setupDossierScene() {
 
     dossier.frontCover.rotation.y = 0;
     dossier.frontCover.userData = { baseZ: 0.15 };
+    
+    // Yield before warming up shaders
+    await new Promise(r => setTimeout(r, 0));
+    
+    // Warm up the GPU by precompiling all shaders and running one dummy frame
+    renderer.compile(scene, camera);
+    composer.render();
 
     // --- State Machine ---
     let bookState: 'FLOATING' | 'OPENING' | 'OPEN' | 'CLOSING' = 'FLOATING';
