@@ -3,7 +3,644 @@
 ---
 
 <div class="dossier-wrapper" id="dossier-wrapper">
-    <canvas id="dossier-canvas"></canvas>
-    
-    <!-- Diegetic text rendering means no DOM panel required here -->
+    <!-- 3D Canvas Placeholder -->
+    <div class="canvas-placeholder">
+        <canvas id="dossier-canvas"></canvas>
+    </div>
+
+    <!-- DOM UI Layer (DOM over Canvas) -->
+    <div class="dom-overlay">
+        <button id="archive-toggle" class="archive-btn" aria-label="Open Archive">ARCHIVE</button>
+
+        <div id="archive-modal" class="archive-modal hidden">
+            <!-- Modal Background: We will attach the shader here if needed or just use brutalist CSS -->
+            <div class="archive-modal-bg"></div>
+            
+            <div class="archive-content">
+                <div class="archive-header">
+                    <h2 class="archive-title">INDEX // ARCHIVE</h2>
+                    <button id="archive-close" class="archive-close" aria-label="Close Archive">[X]</button>
+                </div>
+                
+                <div class="archive-lists">
+                    
+                    <!-- TECHNOLOGIST SECTION -->
+                    <div class="category-section is-expanded">
+                        <button class="category-toggle" aria-expanded="true">
+                            <span class="category-title">TECHNOLOGIST // GITHUB</span>
+                            <span class="category-icon">-</span>
+                        </button>
+                        <div class="category-content">
+                            <div class="category-inner">
+                                <div class="project-list">
+                                    
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=1">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2026</div>
+                                            <div class="col-title">fuzzy-nav</div>
+                                            <div class="col-tech">Shell</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Terminal Tooling</div>
+                                                <p class="project-desc">A fuzzy finder replacing a bunch of zsh plugins. Lightweight, blazing fast navigation without the bloat of traditional setups.</p>
+                                                <a href="https://github.com/claw-h/fuzzy-nav" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=2">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2026</div>
+                                            <div class="col-title">marketplace</div>
+                                            <div class="col-tech">TypeScript</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Web Application</div>
+                                                <p class="project-desc">Full-stack platform prototype built with modern headless e-commerce architecture.</p>
+                                                <a href="https://github.com/claw-h/marketplace" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=3">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2026</div>
+                                            <div class="col-title">schoolos</div>
+                                            <div class="col-tech">TypeScript</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Education Tech</div>
+                                                <p class="project-desc">Educational Management Interface. Streamlining school operations, resource management, and grading systems.</p>
+                                                <a href="https://github.com/claw-h/schoolos" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=4">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2026</div>
+                                            <div class="col-title">loveOS (v2)</div>
+                                            <div class="col-tech">React, TSX, Framer Motion</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Realtime Sync App</div>
+                                                <p class="project-desc">Custom webapp with a two-way user sync using SupaBase Realtime (across components). Uses Framer Motion for transitions, animations, lighting and events. The base components are built in React, using TSX.</p>
+                                                <a href="https://github.com/claw-h/loveOS" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=5">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2021</div>
+                                            <div class="col-title">night</div>
+                                            <div class="col-tech">Web</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Cryptography / Puzzle</div>
+                                                <p class="project-desc">Personal ARG / cryptography puzzle engine designed for specialized interactive storytelling experiences.</p>
+                                                <a href="https://github.com/claw-h/night" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CREATIVE SECTION -->
+                    <div class="category-section">
+                        <button class="category-toggle" aria-expanded="false">
+                            <span class="category-title">CREATIVE // STUDIO</span>
+                            <span class="category-icon">+</span>
+                        </button>
+                        <div class="category-content">
+                            <div class="category-inner">
+                                <div class="project-list">
+                                    
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=6">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2026</div>
+                                            <div class="col-title">Spatial UI Concepts</div>
+                                            <div class="col-tech">Astro, Three.js, GLSL</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Creative Technology</div>
+                                                <p class="project-desc">Interface-driven spatial UI concepts blending WebGL topography, brutalist aesthetics, and interactive cinematic mechanics.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=7">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2025</div>
+                                            <div class="col-title">Technical Vector Diagrams</div>
+                                            <div class="col-tech">Vector Illustration</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Visual Art</div>
+                                                <p class="project-desc">Highly detailed isometric and orthographic vector illustrations for architectural and technical design studies.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=8">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2024</div>
+                                            <div class="col-title">Electronic Jazzy Rap EP</div>
+                                            <div class="col-tech">Composition, Mixing</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Audio Production</div>
+                                                <p class="project-desc">A conceptual 4-track EP merging synthetic soundscapes with organic jazz instrumentation and lyrical cadence.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
+
+<style>
+    .dossier-wrapper {
+        position: relative;
+        width: 100%;
+        height: 100vh;
+        overflow: hidden;
+        background: #020508;
+    }
+
+    .canvas-placeholder {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    #dossier-canvas {
+        width: 100%;
+        height: 100%;
+        display: block;
+        pointer-events: auto;
+    }
+
+    .dom-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+    }
+
+    /* ─── Old Synth Skeuomorphic Button ─── */
+    .archive-btn {
+        position: absolute;
+        bottom: 3rem;
+        right: 3rem;
+        width: 160px;
+        height: 52px;
+        pointer-events: auto;
+        
+        /* Matte dark plastic base */
+        background: #1a1c23;
+        color: #b0bac9;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        
+        /* Physical mechanical bevels */
+        border: 1px solid #080a0c;
+        border-radius: 6px;
+        box-shadow: 
+            inset 0 2px 2px rgba(255, 255, 255, 0.1),   /* Top highlight */
+            inset 0 -4px 4px rgba(0, 0, 0, 0.6),         /* Bottom bevel */
+            inset 1px 0 2px rgba(255, 255, 255, 0.05),   /* Left highlight */
+            inset -1px 0 2px rgba(0, 0, 0, 0.3),         /* Right shadow */
+            0 8px 12px rgba(0, 0, 0, 0.8),               /* Drop shadow */
+            0 15px 25px rgba(0, 0, 0, 0.6);              /* Ambient shadow */
+            
+        transition: all 0.1s cubic-bezier(0.4, 0.0, 0.2, 1);
+        z-index: 50;
+    }
+
+    /* Synth LED Indicator */
+    .archive-btn::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4a1f1f; /* Off state: dull dark red */
+        box-shadow: 
+            inset 0 2px 4px rgba(0,0,0,0.8),
+            0 1px 0 rgba(255,255,255,0.1);
+        transition: all 0.2s ease;
+    }
+
+    /* Active / Open state (Toggled by class) */
+    .archive-btn.is-active::before {
+        background: #ff3333; /* On state: glowing red */
+        box-shadow: 
+            inset 0 1px 2px rgba(255,255,255,0.6),
+            0 0 8px #ff3333,
+            0 0 15px #ff3333;
+    }
+    
+    .archive-btn.is-active {
+        color: #fff;
+    }
+
+    /* Mechanical Press */
+    .archive-btn:active {
+        transform: translateY(6px);
+        box-shadow: 
+            inset 0 1px 1px rgba(255, 255, 255, 0.05),
+            inset 0 -2px 2px rgba(0, 0, 0, 0.6),
+            0 2px 4px rgba(0, 0, 0, 0.8),
+            0 4px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    /* ─── Transparent Reveal Modal ─── */
+    .archive-modal {
+        position: absolute;
+        inset: 0;
+        pointer-events: none; /* Let clicks pass through to WebGL until content is hovered */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem;
+        transition: opacity 0.4s ease, visibility 0.4s ease;
+        z-index: 20;
+    }
+
+    .archive-modal.hidden {
+        opacity: 0;
+        visibility: hidden;
+    }
+
+    .archive-content {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        max-width: 1000px;
+        color: #e0e0e0;
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+        padding: 3rem;
+        pointer-events: auto; /* Allow interacting with the table */
+        
+        /* Hidden State: Fast fade out, no delay */
+        transform: translateY(20px);
+        opacity: 0;
+        transition: all 0.2s ease-out;
+        transition-delay: 0s;
+    }
+    
+    .archive-modal:not(.hidden) .archive-content {
+        /* Active State: Majestic slow fade in with delay */
+        transform: translateY(0);
+        opacity: 1;
+        transition: all 1.0s cubic-bezier(0.16, 1, 0.3, 1);
+        transition-delay: 0.5s; /* Wait for majestic WebGL ocean split */
+    }
+
+    .archive-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 1rem;
+    }
+
+    .archive-title {
+        font-size: 1rem;
+        letter-spacing: 0.2em;
+        margin: 0;
+        font-weight: 500;
+        color: #fff;
+        text-transform: uppercase;
+    }
+
+    .archive-close {
+        background: transparent;
+        border: none;
+        color: #fff;
+        font-family: inherit;
+        font-size: 0.8rem;
+        letter-spacing: 0.1em;
+        cursor: pointer;
+        padding: 0.4rem 0.8rem;
+        transition: all 0.2s ease;
+        opacity: 0.5;
+    }
+
+    .archive-close:hover {
+        opacity: 1;
+        color: #ff4a4a;
+    }
+
+    /* ─── Nested Accordion Lists ─── */
+    .archive-lists {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .category-section {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .category-toggle {
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: transparent;
+        border: none;
+        color: #8fdcff;
+        font-family: inherit;
+        font-size: 0.9rem;
+        letter-spacing: 0.2em;
+        font-weight: 600;
+        cursor: pointer;
+        padding: 1rem 0;
+        transition: all 0.2s ease;
+    }
+
+    .category-toggle:hover {
+        color: #fff;
+    }
+
+    .category-icon {
+        font-family: monospace;
+        font-size: 1.2rem;
+        font-weight: 300;
+        transition: transform 0.3s ease;
+    }
+
+    /* Category Accordion Animation */
+    .category-content {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .category-section.is-expanded .category-content {
+        grid-template-rows: 1fr;
+    }
+    .category-inner {
+        overflow: hidden;
+    }
+
+    /* Project List Styles */
+    .project-list {
+        display: flex;
+        flex-direction: column;
+        padding-bottom: 1.5rem;
+    }
+
+    .project-item {
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .project-item:first-child {
+        border-top: none;
+    }
+
+    .project-header {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        background: transparent;
+        border: none;
+        color: inherit;
+        font-family: inherit;
+        font-size: 0.85rem;
+        padding: 1.25rem 0.5rem;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        text-align: left;
+    }
+
+    .project-header:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    .col-year { width: 10%; color: rgba(255,255,255,0.4); }
+    .col-title { width: 30%; font-weight: 500; color: #fff; }
+    .col-tech { width: 55%; color: rgba(255,255,255,0.3); }
+    .col-icon { width: 5%; text-align: right; font-family: monospace; color: #8fdcff; display: inline-block; transition: transform 0.3s ease; }
+
+    /* Project Details Accordion Animation */
+    .project-details {
+        display: grid;
+        grid-template-rows: 0fr;
+        transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        background: rgba(0, 0, 0, 0.2);
+    }
+    
+    .project-item.is-expanded .project-details {
+        grid-template-rows: 1fr;
+    }
+    
+    .project-item.is-expanded .col-icon {
+        transform: rotate(45deg); /* Turns + into x */
+    }
+
+    .project-details-inner {
+        overflow: hidden;
+        padding: 0 0.5rem;
+    }
+
+    /* Project Content Styling */
+    .project-meta {
+        font-size: 0.75rem;
+        color: #8fdcff;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+        letter-spacing: 0.05em;
+    }
+    
+    .project-meta span {
+        color: rgba(255,255,255,0.4);
+    }
+
+    .project-desc {
+        font-size: 0.85rem;
+        line-height: 1.6;
+        color: rgba(255,255,255,0.7);
+        margin: 0 0 1.5rem 0;
+        max-width: 800px;
+    }
+
+    .project-link {
+        display: inline-block;
+        font-size: 0.75rem;
+        color: #1a1c23;
+        background: #8fdcff;
+        padding: 0.4rem 1rem;
+        text-decoration: none;
+        border-radius: 2px;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        margin-bottom: 1.5rem;
+        transition: all 0.2s ease;
+    }
+
+    .project-link:hover {
+        background: #fff;
+        transform: translateY(-2px);
+    }
+
+    @media (max-width: 768px) {
+        .archive-btn {
+            bottom: 1.5rem;
+            right: 1.5rem;
+            width: 140px;
+            height: 48px;
+            font-size: 0.7rem;
+        }
+        .archive-content {
+            padding: 1.5rem;
+        }
+        .project-header {
+            flex-wrap: wrap;
+        }
+        .col-year { width: 100%; margin-bottom: 0.5rem; }
+        .col-title { width: 90%; }
+        .col-icon { width: 10%; }
+        .col-tech { width: 100%; margin-top: 0.5rem; }
+    }
+</style>
+
+<script>
+    import { setHoverTarget } from '../utils/hoverTargets';
+    import { playClack, playRumble, playBlip } from '../utils/audio';
+
+    const toggleBtn = document.getElementById('archive-toggle');
+    const closeBtn = document.getElementById('archive-close');
+    const modal = document.getElementById('archive-modal');
+    
+    let isOpen = false;
+
+    if (toggleBtn && closeBtn && modal) {
+        
+        const openArchive = () => {
+            isOpen = true;
+            playClack();
+            playRumble(2.5);
+            modal.classList.remove('hidden');
+            toggleBtn.classList.add('is-active');
+            window.dispatchEvent(new CustomEvent('toggle-archive', { detail: { open: true } }));
+            setHoverTarget('archive', true);
+        };
+        
+        const closeArchive = () => {
+            isOpen = false;
+            playClack();
+            playRumble(0.8);
+            modal.classList.add('hidden');
+            toggleBtn.classList.remove('is-active');
+            window.dispatchEvent(new CustomEvent('toggle-archive', { detail: { open: false } }));
+            setHoverTarget('archive', false);
+        };
+
+        toggleBtn.addEventListener('click', () => {
+            if (isOpen) {
+                closeArchive();
+            } else {
+                openArchive();
+            }
+        });
+        
+        toggleBtn.addEventListener('mouseenter', () => setHoverTarget('archive', true));
+        toggleBtn.addEventListener('mouseleave', () => {
+            if (!isOpen) setHoverTarget('archive', false);
+        });
+
+        closeBtn.addEventListener('click', closeArchive);
+
+        // Category Accordions
+        document.querySelectorAll('.category-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                playBlip();
+                const section = btn.closest('.category-section');
+                if (!section) return;
+                const isExpanded = section.classList.contains('is-expanded');
+                section.classList.toggle('is-expanded', !isExpanded);
+                btn.setAttribute('aria-expanded', String(!isExpanded));
+                const icon = btn.querySelector('.category-icon');
+                if (icon) icon.textContent = isExpanded ? '+' : '-';
+            });
+        });
+
+        // Project Image Previews
+        document.querySelectorAll('.project-item').forEach(item => {
+            item.addEventListener('mouseenter', () => {
+                const url = item.getAttribute('data-image');
+                if (url && isOpen) {
+                    window.dispatchEvent(new CustomEvent('project-hover', { detail: { url } }));
+                }
+            });
+            item.addEventListener('mouseleave', () => {
+                window.dispatchEvent(new CustomEvent('project-hover', { detail: { url: null } }));
+            });
+        });
+
+        // Project Accordions
+        document.querySelectorAll('.project-header').forEach(btn => {
+            btn.addEventListener('click', () => {
+                playBlip();
+                const item = btn.closest('.project-item');
+                if (!item) return;
+                const isExpanded = item.classList.contains('is-expanded');
+                
+                // Auto-close other projects in the same list
+                const parentList = item.closest('.project-list');
+                if (parentList) {
+                    parentList.querySelectorAll('.project-item.is-expanded').forEach(openItem => {
+                        if (openItem !== item) {
+                            openItem.classList.remove('is-expanded');
+                            const openBtn = openItem.querySelector('.project-header');
+                            if (openBtn) openBtn.setAttribute('aria-expanded', 'false');
+                        }
+                    });
+                }
+                
+                item.classList.toggle('is-expanded', !isExpanded);
+                btn.setAttribute('aria-expanded', String(!isExpanded));
+            });
+        });
+    }
+</script>

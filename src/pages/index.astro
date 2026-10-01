@@ -44,9 +44,18 @@ import DossierIndex from '../components/DossierIndex.astro';
 		<!-- ═══════════════════════════════════════════
 		     ZONE 01 — HEART SEQUENCE (scroll-driven)
 		════════════════════════════════════════════ -->
-		<section class="hero-sequence" id="hero" data-hero>
+		<section class="hero-sequence" id="hero" data-hero data-snap-point="true">
 			<div id="phase-1" style="position: absolute; top: 0;"></div>
-			<div id="phase-2" style="position: absolute; top: 150vh;"></div>
+			
+			<!-- Cinematic Snap Points for Heart Timeline (650vh scrollable range) -->
+			<div data-snap-point="true" style="position: absolute; top: 71.5vh;"></div> <!-- heartFade end (0.11) -->
+			<div id="phase-2" style="position: absolute; top: 150vh;" data-snap-point="true"></div> <!-- Legacy anchor -->
+			<div data-snap-point="true" style="position: absolute; top: 221vh;"></div> <!-- rotateH end (0.34) -->
+			<div data-snap-point="true" style="position: absolute; top: 377vh;"></div> <!-- rotateV end (0.58) -->
+			<div data-snap-point="true" style="position: absolute; top: 520vh;"></div> <!-- dissection end (0.80) -->
+			<div data-snap-point="true" style="position: absolute; top: 611vh;"></div> <!-- "This is where it opens." (0.94) -->
+			<div data-snap-point="true" style="position: absolute; top: 643.5vh;"></div> <!-- "Come in." (0.99) -->
+
 			<div class="hero-sticky">
 				<canvas class="heart-canvas" data-heart-canvas></canvas>
 				<canvas class="fire-canvas"  data-fire-canvas></canvas>
@@ -78,8 +87,10 @@ import DossierIndex from '../components/DossierIndex.astro';
 		<!-- ═══════════════════════════════════════════
 		     ZONE 02 — DREAM CANVAS
 		════════════════════════════════════════════ -->
-		<section class="dream-zone canvas-zone" data-canvas-zone="dream">
+		<section class="dream-zone canvas-zone" data-canvas-zone="dream" data-snap-point="true">
 			<div id="phase-3" style="position: absolute; top: 0;"></div>
+			<div data-snap-point="true" style="position: absolute; top: 100vh;"></div>
+			<div data-snap-point="true" style="position: absolute; top: 200vh;"></div>
 			<canvas data-dream-canvas></canvas>
 			<!-- No DOM copy — declaration is rendered character-by-character via pretext onto canvas -->
 		</section>
@@ -88,7 +99,9 @@ import DossierIndex from '../components/DossierIndex.astro';
 		     ZONE 03 — CASE DOSSIER
 		     Replaces both the old Vitruvian/Vinyl zone and the CRT TV zone.
 		-->
-		<section class="dossier-zone canvas-zone" id="work" style="position: relative; height: 300vh;">
+		<section class="dossier-zone canvas-zone" id="work" style="position: relative; height: 300vh;" data-snap-point="true">
+			<div data-snap-point="true" style="position: absolute; top: 100vh;"></div>
+			<div data-snap-point="true" style="position: absolute; top: 200vh;"></div>
 			<div class="dossier-sticky" style="position: sticky; top: 0; height: 100vh; overflow: hidden;">
 				<DossierIndex />
 			</div>
@@ -125,6 +138,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 	import { onReady }             from '../utils/loadState';
 	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
+	import { DiscreteScrollController } from '../controllers/DiscreteScrollController';
 	
 	let setDreamScrollVelocity: ((v: number) => void) | null = null;
 	let setDreamScrollProgress: ((p: number) => void) | null = null;
@@ -211,12 +225,16 @@ import DossierIndex from '../components/DossierIndex.astro';
 
 
 
-	// 2. Initialize Lenis to prevent scrolling too fast
+	// 2. Initialize Lenis
     const lenis = new Lenis({
         lerp: 0.08,             // Smoothness (lower = softer/slower catching up)
-        wheelMultiplier: 0.4,   // <-- REDUCE THIS (e.g., 0.4) to limit scroll speed per flick
-        smoothWheel: true,
+        wheelMultiplier: 0.4,
+        smoothWheel: true,      // We'll let DiscreteScrollController override this
     });
+
+	// Initialize the custom snap scrolling controller
+	const discreteScrollController = new DiscreteScrollController(lenis);
+
 
 
 
@@ -273,6 +291,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 		}
 		cursor?.destroy();
 		heroCopy?.();
+        discreteScrollController.destroy();
         lenis.destroy(); // <-- 5. Clean up Lenis on page swap
 	};
 
@@ -729,20 +748,22 @@ import DossierIndex from '../components/DossierIndex.astro';
 	}
 
 	.dream-zone {
-		min-height: 140vh;
-		background:
-			radial-gradient(circle at 50% 60%, rgba(0, 100, 200, 0.07), transparent 50%),
-			#05070b;
+		min-height: 300vh;
+		position: relative;
+		background: #020508;
 		/* No padding — canvas fills the full section */
 		padding: 0;
 		display: block;
+		/* .canvas-zone sets overflow: hidden, which kills position: sticky
+		   on the child canvas. Override it — same fix as .biome-zone. */
+		overflow: visible;
 	}
 
 	.dream-zone canvas {
-		position: absolute;
-		inset: 0;
+		position: sticky;
+		top: 0;
 		width: 100%;
-		height: 100%;
+		height: 100vh;
 		display: block;
 	}
 
@@ -750,6 +771,8 @@ import DossierIndex from '../components/DossierIndex.astro';
 		padding: 0;
 		display: block;
 		background: #020508;
+		/* Same sticky fix as .dream-zone and .biome-zone */
+		overflow: visible;
 	}
 
 		/* ─── Zone 03: Biome Sphere ──────────────────────── */

@@ -1027,16 +1027,19 @@ export function setupHeartScene(): LoopController | null {
 		heartGroup.visible = false;
 		dischargeSystem.mesh.visible = false;
 		renderer.compile(scene, camera);
+        composer.render();
 		await new Promise(r => setTimeout(r, 20));
 		
 		// Chunk 2: Discharge
 		dischargeSystem.mesh.visible = true;
 		renderer.compile(scene, camera);
+        composer.render();
 		await new Promise(r => setTimeout(r, 20));
 		
 		// Chunk 3: Heart Slices
 		heartGroup.visible = true;
 		renderer.compile(scene, camera);
+        composer.render();
 		await new Promise(r => setTimeout(r, 20));
 
 		// Create an invisible proxy cylinder for raycasting to eliminate CPU overhead

@@ -1,14 +1,26 @@
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { tweenManager, Easing } from '../utils/animation';
-import { createDossierGeometry, type DossierPage } from './dossier/DossierGeometry';
-import { attachTabToPage } from './dossier/DossierTabs';
-import { spotlightConfig, spotlightUniforms } from './dossier/shaders';
-import { createProjectTexture } from './dossier/DossierPageContent';
-import { categories } from '../data/categories';
 import { createLoopController } from '../utils/canvas';
+
+function createAsciiAtlas() {
+    const chars = '@%#*+=-:. ';
+    const canvas = document.createElement('canvas');
+    canvas.width = 1000;
+    canvas.height = 100;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'white';
+    ctx.font = '80px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < chars.length; i++) {
+        ctx.fillText(chars[i], i * 100 + 50, 50);
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.minFilter = THREE.NearestFilter;
+    tex.magFilter = THREE.NearestFilter;
+    return tex;
+}
 
 export async function setupDossierScene() {
     const zone = document.querySelector('.dossier-zone');
@@ -16,443 +28,446 @@ export async function setupDossierScene() {
     
     if (!zone || !canvas) return { destroy: () => {} };
 
-    // Setup Three.js scene
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: true, powerPreference: 'high-performance' });
-    renderer.setClearColor(0x020508, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020508);
-
-    // Lighting
-    const ambient = new THREE.AmbientLight(0x0a1420, 0.8);
-    const keyLight = new THREE.PointLight(0xa6d8ff, 8, 20);
-    keyLight.position.set(5, 5, 8);
-    keyLight.castShadow = true;
-    keyLight.shadow.mapSize.width = 2048;
-    keyLight.shadow.mapSize.height = 2048;
-    keyLight.shadow.bias = -0.001;
-    const fillLight = new THREE.PointLight(0x4488cc, 4, 18);
-    fillLight.position.set(-5, -3, 6);
-    scene.add(ambient, keyLight, fillLight);
-
-    // Spotlight
-    const cursorLight = new THREE.SpotLight(0x82d6ff, 0, 12, Math.PI / 5, 0.8, 2.0);
-    cursorLight.position.set(0, 0, 5);
-    cursorLight.castShadow = true;
-    cursorLight.shadow.mapSize.width = 1024;
-    cursorLight.shadow.mapSize.height = 1024;
-    cursorLight.shadow.bias = -0.002;
-    const cursorLightTarget = new THREE.Object3D();
-    cursorLightTarget.position.set(0, 0, 0);
-    scene.add(cursorLightTarget);
-    cursorLight.target = cursorLightTarget;
-    scene.add(cursorLight);
+    scene.background = new THREE.Color(0x020305);
     
-    let cursorLightTargetIntensity = 0;
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 35;
 
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
-    camera.position.set(0, -2, 22);
-    camera.lookAt(0, 0, 0);
-
-    // Post-Processing
-    const renderScene = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85
-    );
-    bloomPass.threshold = 0.95;
-    bloomPass.strength = 0.15;
-    bloomPass.radius = 0.6;
-
-    const composer = new EffectComposer(renderer);
-    composer.addPass(renderScene);
-    composer.addPass(bloomPass);
-
-    // Build Dossier
-    const dossier = createDossierGeometry();
+    const atlasTexture = createAsciiAtlas();
+    const imageTexture = new THREE.Texture();
     
-    // Initial orientation — tilted and rotated
-    const baseRotX = Math.PI / 8;
-    const baseRotY = -Math.PI / 12;
-    dossier.group.rotation.x = baseRotX;
-    dossier.group.rotation.y = baseRotY;
-    
-    dossier.group.scale.set(0.85, 0.85, 0.85);
-    dossier.group.position.y = -3;
-
-    scene.add(dossier.group);
-
-    const hitboxes: THREE.Mesh[] = [];
-    const allPages: DossierPage[] = [];
-    let currentSpreadIndex = 0;
-
-
-
-    let pageZOffset = 0.06;
-    let tabIndex = 0;
-    const categoryStartIndices: Record<string, number> = {};
-
-    for (const cat of categories) {
-        categoryStartIndices[cat.id] = allPages.length;
-
-        for (let pIdx = 0; pIdx < cat.projects.length; pIdx++) {
-            const proj = cat.projects[pIdx];
-            await new Promise(r => setTimeout(r, 0)); // Yield to prevent TBT spikes
+    const shaderMat = new THREE.ShaderMaterial({
+        uniforms: {
+            tAtlas: { value: atlasTexture },
+            tImage: { value: imageTexture },
+            uTime: { value: 0 },
+            uMorphProgress: { value: 1.0 },
+            uColor: { value: new THREE.Color(0x82d6ff) },
+            uMousePos: { value: new THREE.Vector3(9999, 9999, 0) },
+            uRadius: { value: 12.0 },
+            uArchiveOpen: { value: 0.0 }
+        },
+        vertexShader: `
+            attribute vec2 aInstanceUv;
             
-            const pageId = `${cat.id}-${pIdx}`;
-            const page = dossier.createPage(pageId, pageZOffset);
+            uniform sampler2D tImage;
+            uniform float uMorphProgress;
+            uniform float uTime;
+            uniform float uArchiveOpen;
             
-            const { textTex, geomTex } = createProjectTexture(proj, cat, Object.keys(categoryStartIndices).length, dossier.BOOK_WIDTH, dossier.BOOK_HEIGHT);
-            const pMat = page.mesh.material as THREE.MeshPhysicalMaterial;
-            pMat.emissiveMap = textTex;
-            pMat.emissive = new THREE.Color(0xffffff);
-            pMat.emissiveIntensity = 1.5;
-            
-            (page.uniforms as any).tGeometry = { value: geomTex };
+            varying vec2 vUv;
+            varying float vBrightness;
+            varying vec3 vColor;
+            varying vec3 vWorldPos;
 
-            if (pIdx === 0) {
-                const { hitbox } = attachTabToPage(
-                    page.group, 
-                    cat, 
-                    tabIndex, 
-                    categories.length, 
-                    dossier.BOOK_WIDTH, 
-                    dossier.BOOK_HEIGHT, 
-                    dossier.materials
-                );
-                hitboxes.push(hitbox);
-                tabIndex++;
+            float random(vec2 st) {
+                return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
             }
+
+            void main() {
+                vUv = uv;
+                
+                vec4 imgCol = texture2D(tImage, aInstanceUv);
+                float brightness = dot(imgCol.rgb, vec3(0.299, 0.587, 0.114));
+                vColor = imgCol.rgb;
+                
+                float n = random(aInstanceUv + floor(uTime * 15.0));
+                float activeBrightness = mix(n, brightness, smoothstep(0.0, 1.0, uMorphProgress));
+                vBrightness = activeBrightness;
+
+                vec3 transformed = position;
+                float zExtrusion = (activeBrightness * 3.0) - 1.5;
+                float explode = mix(n * 20.0 - 10.0, zExtrusion, smoothstep(0.0, 1.0, uMorphProgress));
+                transformed.z += explode;
+
+                vec4 worldPos = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
+                // Ocean-like Layered Split:
+                vec4 instanceCenter = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                float splitDir = sign(instanceCenter.y);
+                if (splitDir == 0.0) splitDir = 1.0;
+                
+                // Darker pixels (valleys) pull away first. Brighter pixels (peaks) drag behind.
+                float brightnessDelay = activeBrightness * 0.15;
+                // Add a subtle spatial wave across X
+                float waveDelay = (sin(instanceCenter.x * 0.2) * 0.5 + 0.5) * 0.1;
+                
+                float totalDelay = brightnessDelay + waveDelay;
+                
+                // Map global uArchiveOpen [0, 1] to local progress
+                float localProgress = smoothstep(totalDelay, totalDelay + 0.75, uArchiveOpen);
+                
+                // Smooth easing curve
+                float easedSplit = smoothstep(0.0, 1.0, localProgress);
+                
+                worldPos.y += splitDir * (easedSplit * 40.0);
+                
+                vWorldPos = worldPos.xyz;
+                
+                gl_Position = projectionMatrix * viewMatrix * worldPos;
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D tAtlas;
+            uniform vec3 uColor;
+            uniform vec3 uMousePos;
+            uniform float uRadius;
             
-            page.group.userData = { project: proj, category: cat, baseZ: pageZOffset };
-            allPages.push(page);
-            pageZOffset -= 0.001;
+            varying vec2 vUv;
+            varying float vBrightness;
+            varying vec3 vColor;
+            varying vec3 vWorldPos;
+
+            void main() {
+                float dist = distance(vWorldPos.xy, uMousePos.xy);
+                float wetMix = 1.0 - smoothstep(0.0, uRadius, dist);
+                wetMix = pow(wetMix, 1.5);
+                
+                float charIndex = floor((1.0 - vBrightness) * 9.9);
+                charIndex = clamp(charIndex, 0.0, 9.0);
+                vec2 atlasUv = vec2((charIndex + vUv.x) / 10.0, 1.0 - vUv.y);
+                vec4 asciiCol = texture2D(tAtlas, atlasUv);
+                
+                float depthFog = smoothstep(0.1, 0.8, vBrightness);
+                
+                vec3 dryBg = vec3(0.01, 0.015, 0.02);
+                vec3 dryText = uColor * (vBrightness + 0.2) * 1.5;
+                vec3 dryColor = mix(dryBg, dryText, asciiCol.r * depthFog);
+                
+                vec3 wetBg = vColor * 0.4;
+                vec3 wetText = vColor * 2.0;
+                vec3 wetColor = mix(wetBg, wetText, asciiCol.r);
+                
+                vec3 finalColor = mix(dryColor, wetColor, wetMix);
+                
+                gl_FragColor = vec4(finalColor, 1.0);
+            }
+        `,
+        transparent: false
+    });
+
+    const masterGroup = new THREE.Group();
+    scene.add(masterGroup);
+
+    // Image texture requires mirrored wrapping to infinitely extend off-screen
+    imageTexture.wrapS = THREE.MirroredRepeatWrapping;
+    imageTexture.wrapT = THREE.MirroredRepeatWrapping;
+
+    const cols = 350;
+    const rows = 250;
+    const count = cols * rows;
+    
+    // Tiny mathematical planes for ultra-high resolution
+    const planeGeo = new THREE.PlaneGeometry(0.14, 0.14);
+    const instanceUvs = new Float32Array(count * 2);
+    const instancedMesh = new THREE.InstancedMesh(planeGeo, shaderMat, count);
+    
+    const dummy = new THREE.Object3D();
+    let i = 0;
+    
+    const spacingX = 0.16;
+    const spacingY = 0.16;
+    const totalWidth = cols * spacingX;
+    const totalHeight = rows * spacingY;
+
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+            const px = (x * spacingX) - (totalWidth / 2);
+            const py = ((rows - 1 - y) * spacingY) - (totalHeight / 2);
+            
+            dummy.position.set(px, py, 0);
+            dummy.updateMatrix();
+            instancedMesh.setMatrixAt(i, dummy.matrix);
+            
+            instanceUvs[i * 2] = (px / 40.0) + 0.5;
+            instanceUvs[i * 2 + 1] = (py / 30.0) + 0.5;
+            
+            i++;
         }
     }
-
-    dossier.frontCover.rotation.y = 0;
-    dossier.frontCover.userData = { baseZ: 0.15 };
     
-    // Yield before warming up shaders
-    await new Promise(r => setTimeout(r, 0));
+    planeGeo.setAttribute('aInstanceUv', new THREE.InstancedBufferAttribute(instanceUvs, 2));
+    masterGroup.add(instancedMesh);
     
-    // Warm up the GPU by precompiling all shaders and running one dummy frame
-    renderer.compile(scene, camera);
-    composer.render();
-
-    // --- State Machine ---
-    let bookState: 'FLOATING' | 'OPENING' | 'OPEN' | 'CLOSING' = 'FLOATING';
-    
-    const targetParallax = new THREE.Vector2(0, 0);
-    const currentParallax = new THREE.Vector2(0, 0);
-    let hoveredTab: THREE.Object3D | null = null;
-
-    // Page Flipping Logic (with Physics)
-    const flipToPage = (targetIndex: number) => {
-        if (targetIndex === currentSpreadIndex) return;
-
-        const startIndex = Math.min(currentSpreadIndex, targetIndex);
-        currentSpreadIndex = targetIndex;
-        
-        for (let i = 0; i < allPages.length; i++) {
-            const page = allPages[i];
-            const shouldBeOpen = i < targetIndex;
-
-            if (page.isOpen !== shouldBeOpen) {
-                page.isOpen = shouldBeOpen;
-                
-                const targetRot = shouldBeOpen ? -Math.PI : 0;
-                const delay = Math.abs(i - startIndex) * 50;
-                const baseZ = page.group.userData.baseZ;
-
-                setTimeout(() => {
-                    tweenManager.to({
-                        from: page.group.rotation.y,
-                        to: targetRot,
-                        duration: 800,
-                        easing: Easing.easeOutCubic,
-                        onUpdate: (v) => {
-                            page.group.rotation.y = v;
-                            const rotNorm = Math.abs(v / Math.PI); 
-                            
-                            // Tension bend (Z and X)
-                            const bend = Math.sin(rotNorm * Math.PI) * 0.8;
-                            page.uniforms.uBendAmount.value = bend;
-                            
-                            // True Physical Stacking Z-Shift
-                            const zShift = baseZ * (1.0 - 2.0 * rotNorm);
-                            const zLift = Math.sin(rotNorm * Math.PI) * 0.05; // clear other pages
-                            page.group.position.z = zShift + zLift;
-                        }
-                    });
-                }, delay);
+    // Ghost Background Plane for the Deep Bleed
+    const bgMat = new THREE.ShaderMaterial({
+        uniforms: {
+            tImage: { value: imageTexture },
+            uMorphProgress: { value: 1.0 },
+            uMousePos: { value: new THREE.Vector3(9999, 9999, 0) },
+            uRadius: { value: 12.0 },
+            uArchiveOpen: { value: 0.0 }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            varying vec3 vWorldPos;
+            void main() {
+                vUv = vec2(position.x / 40.0 + 0.5, position.y / 30.0 + 0.5);
+                vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                vWorldPos = worldPos.xyz;
+                gl_Position = projectionMatrix * viewMatrix * worldPos;
             }
-        }
+        `,
+        fragmentShader: `
+            uniform sampler2D tImage;
+            uniform float uMorphProgress;
+            uniform vec3 uMousePos;
+            uniform float uRadius;
+            uniform float uArchiveOpen;
+            
+            varying vec2 vUv;
+            varying vec3 vWorldPos;
+
+            void main() {
+                float dist = distance(vWorldPos.xy, uMousePos.xy);
+                float wetMix = 1.0 - smoothstep(0.0, uRadius * 1.5, dist);
+                
+                vec4 imgCol = texture2D(tImage, vUv);
+                float morphFade = smoothstep(0.7, 1.0, uMorphProgress);
+                
+                // Fade out background plane when archive opens
+                float fade = 1.0 - smoothstep(0.0, 0.5, uArchiveOpen);
+                
+                gl_FragColor = vec4(imgCol.rgb * wetMix * 0.5 * morphFade, fade);
+            }
+        `,
+        transparent: true,
+        depthWrite: false
+    });
+    const bgPlane = new THREE.Mesh(new THREE.PlaneGeometry(totalWidth, totalHeight), bgMat);
+    bgPlane.position.z = -12; // Sit behind the ASCII grid
+    masterGroup.add(bgPlane);
+
+    // --- WebGL Liquid Previews & CRT Post-Processing (Phase 1 & 2) ---
+    const transparentData = new Uint8Array([0, 0, 0, 0]);
+    const emptyTexture = new THREE.DataTexture(transparentData, 1, 1, THREE.RGBAFormat);
+    emptyTexture.needsUpdate = true;
+
+    const previewMat = new THREE.ShaderMaterial({
+        uniforms: {
+            tPreview: { value: emptyTexture },
+            uTime: { value: 0 },
+            uHoverFade: { value: 0 },
+            uMousePos: { value: new THREE.Vector2(99, 99) }
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                // Subtle breathing scale
+                vec3 pos = position;
+                pos *= 1.0 + sin(uv.y * 5.0) * 0.01;
+                gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(pos, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D tPreview;
+            uniform float uTime;
+            uniform float uHoverFade;
+            uniform vec2 uMousePos;
+            
+            varying vec2 vUv;
+
+            void main() {
+                vec2 uv = vUv;
+                
+                // Subtle liquid distortion based on time and mouse
+                float dist = distance(uv, uMousePos);
+                float wave = sin(dist * 15.0 - uTime * 2.0) * 0.02 * smoothstep(0.6, 0.0, dist);
+                uv += wave * uHoverFade;
+                
+                // Chromatic Aberration
+                float caShift = 0.02 * uHoverFade * (1.0 + wave * 5.0);
+                
+                vec4 texR = texture2D(tPreview, uv + vec2(caShift, 0.0));
+                vec4 texG = texture2D(tPreview, uv);
+                vec4 texB = texture2D(tPreview, uv - vec2(caShift, 0.0));
+                
+                // Use a generic gradient if texture is missing
+                vec3 fallback = vec3(uv.x, uv.y, sin(uTime)*0.5+0.5);
+                
+                vec3 col = vec3(texR.r, texG.g, texB.b);
+                if (texG.a < 0.1) col = fallback; // Safefall
+                
+                // CRT Scanlines
+                float scanline = sin(vUv.y * 600.0) * 0.06;
+                col -= scanline;
+                
+                // Film Grain
+                float grain = fract(sin(dot(vUv, vec2(12.9898, 78.233)) + uTime) * 43758.5453) * 0.06;
+                col += grain;
+                
+                // Fade edges smoothly into the void
+                float vignette = smoothstep(0.7, 0.1, length(vUv - 0.5));
+                col *= vignette;
+                
+                // Slight color tint to match the site
+                col *= vec3(0.8, 0.9, 1.0);
+                
+                gl_FragColor = vec4(col, uHoverFade * vignette);
+            }
+        `,
+        transparent: true,
+        depthWrite: false
+    });
+    
+    // Enormous plane to act as the void backdrop for previews
+    const previewPlane = new THREE.Mesh(new THREE.PlaneGeometry(50, 35), previewMat);
+    previewPlane.position.z = -15; // Deeper than the ghost plane
+    masterGroup.add(previewPlane);
+
+    let targetMorph = 1.0;
+    let isFetching = false;
+    
+    const fetchNewImage = () => {
+        if (isFetching) return;
+        isFetching = true;
+        targetMorph = 0.0;
+        
+        // Fetch full COLOR photography to fuel the realistic tint and bleed
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = `https://picsum.photos/1000/750?random=${Math.random()}`;
+        
+        img.onload = () => {
+            const offscreen = document.createElement('canvas');
+            offscreen.width = 1000;
+            offscreen.height = 750;
+            const ctx = offscreen.getContext('2d')!;
+            ctx.drawImage(img, 0, 0, 1000, 750);
+            imageTexture.image = offscreen;
+            imageTexture.needsUpdate = true;
+            targetMorph = 1.0;
+            isFetching = false;
+        };
+        
+        img.onerror = () => {
+            // If picsum throws a 503 or CORS error, retry immediately
+            isFetching = false;
+            fetchNewImage();
+        };
     };
 
-    // Interaction 
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2(9999, 9999);
-    
-    const trackingPlaneGeom = new THREE.PlaneGeometry(100, 100);
-    const trackingPlane = new THREE.Mesh(trackingPlaneGeom, new THREE.MeshBasicMaterial({ visible: false }));
-    scene.add(trackingPlane);
+    fetchNewImage();
+    const onClick = () => fetchNewImage();
+    window.addEventListener('click', onClick);
 
-    // Book Raycast Hitbox (invisible box covering the book)
-    const bookHitboxGeom = new THREE.BoxGeometry(dossier.BOOK_WIDTH * 1.2, dossier.BOOK_HEIGHT * 1.2, 2.0);
-    const bookHitbox = new THREE.Mesh(bookHitboxGeom, new THREE.MeshBasicMaterial({ visible: false }));
-    dossier.group.add(bookHitbox);
+    let targetRotX = 0;
+    let targetRotY = 0;
+    const mouse = new THREE.Vector2(0, 0);
+    const raycaster = new THREE.Raycaster();
 
     const onMouseMove = (e: MouseEvent) => {
-        const rect = canvas.getBoundingClientRect();
-        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         
-        targetParallax.x = mouse.x * 0.15;
-        targetParallax.y = mouse.y * 0.1;
+        targetRotX = mouse.y * 0.05;
+        targetRotY = mouse.x * 0.08;
     };
     window.addEventListener('mousemove', onMouseMove);
 
-    const onClick = (e: MouseEvent) => {
-        if (!entranceFinished) return;
-
-        raycaster.setFromCamera(mouse, camera);
-        
-        if (bookState === 'FLOATING') {
-            const intersects = raycaster.intersectObject(bookHitbox);
-            if (intersects.length > 0) {
-                // Open the book
-                bookState = 'OPENING';
-                
-                // Tween group to flat
-                tweenManager.to({
-                    from: 0, to: 1, duration: 1200, easing: Easing.easeOutCubic,
-                    onUpdate: (v) => {
-                        dossier.group.rotation.x = baseRotX * (1 - v);
-                        dossier.group.rotation.y = baseRotY * (1 - v);
-                    }
-                });
-
-                // Tween cover open
-                tweenManager.to({
-                    from: 0, to: 1, duration: 1400, easing: Easing.easeOutCubic,
-                    onUpdate: (v) => {
-                        dossier.frontCover.rotation.y = -v * Math.PI;
-                        const rotNorm = Math.abs(dossier.frontCover.rotation.y / Math.PI);
-                        const baseZ = dossier.frontCover.userData.baseZ;
-                        dossier.frontCover.position.z = baseZ * (1.0 - 2.0 * rotNorm) + (Math.sin(rotNorm * Math.PI) * 0.05);
-                    },
-                    onComplete: () => { bookState = 'OPEN'; }
-                });
-            }
-        } 
-        else if (bookState === 'OPEN') {
-            const tabIntersects = raycaster.intersectObjects(hitboxes, true);
-            if (tabIntersects.length > 0) {
-                // Clicked a tab
-                let obj: THREE.Object3D | null = tabIntersects[0].object;
-                while (obj) {
-                    if (obj.userData?.isTab && obj.userData?.categoryId) {
-                        const targetIndex = categoryStartIndices[obj.userData.categoryId];
-                        if (targetIndex !== undefined) {
-                            flipToPage(targetIndex);
-                            
-                            // Cinematic Micro-Dolly Camera Push
-                            tweenManager.to({
-                                from: camera.fov, to: 42, duration: 800, easing: Easing.easeOutCubic,
-                                onUpdate: (v) => { camera.fov = v; camera.updateProjectionMatrix(); }
-                            });
-                        }
-                        break;
-                    }
-                    obj = obj.parent;
-                }
-            } else {
-                const bookIntersects = raycaster.intersectObject(bookHitbox);
-                if (bookIntersects.length === 0) {
-                    // Clicked entirely outside the book -> Close it
-                    bookState = 'CLOSING';
-                    
-                    flipToPage(0); // Flip all pages back
-                    
-                    // Reset Camera
-                    tweenManager.to({
-                        from: camera.fov, to: 45, duration: 800, easing: Easing.easeOutCubic,
-                        onUpdate: (v) => { camera.fov = v; camera.updateProjectionMatrix(); }
-                    });
-
-                    // Tween group back to floating rotation
-                    tweenManager.to({
-                        from: 0, to: 1, duration: 1200, easing: Easing.easeOutCubic,
-                        onUpdate: (v) => {
-                            dossier.group.rotation.x = baseRotX * v;
-                            dossier.group.rotation.y = baseRotY * v;
-                        }
-                    });
-
-                    // Tween cover closed
-                    tweenManager.to({
-                        from: dossier.frontCover.rotation.y, to: 0, duration: 1200, easing: Easing.easeOutCubic,
-                        onUpdate: (v) => {
-                            dossier.frontCover.rotation.y = v;
-                            const rotNorm = Math.abs(v / Math.PI);
-                            const baseZ = dossier.frontCover.userData.baseZ;
-                            dossier.frontCover.position.z = baseZ * (1.0 - 2.0 * rotNorm) + (Math.sin(rotNorm * Math.PI) * 0.05);
-                        },
-                        onComplete: () => { bookState = 'FLOATING'; }
-                    });
-                }
-            }
-        }
-    };
-    canvas.addEventListener('click', onClick);
-
-    const clock = new THREE.Clock();
-    let entranceFinished = false;
-    let hasAppeared = false;
-
-    const animate = (timeNow: number) => {
-        const delta = clock.getDelta();
-        
-        if (!hasAppeared) {
-            hasAppeared = true;
-            tweenManager.to({
-                from: 0, to: 1, duration: 1200, easing: Easing.easeOutCubic,
-                onUpdate: (v) => {
-                    const s = 0.85 + v * 0.15;
-                    dossier.group.scale.set(s, s, s);
-                    dossier.group.position.y = -3 * (1 - v);
-                },
-                onComplete: () => { entranceFinished = true; }
-            });
-        }
-        
-        tweenManager.update(timeNow);
-
-        currentParallax.lerp(targetParallax, 0.05);
-        
-        if (entranceFinished && bookState === 'FLOATING') {
-            dossier.group.position.y = Math.sin(timeNow * 0.0008) * 0.2;
-            dossier.group.rotation.x = baseRotX - currentParallax.y;
-            dossier.group.rotation.y = baseRotY + currentParallax.x;
-        }
-
-        // Update uTime for all dynamic materials
-        allPages.forEach(page => {
-            const uniforms = page.uniforms as any;
-            if (uniforms && uniforms.uTime) {
-                uniforms.uTime.value += delta;
-            }
-        });
-        
-        // Update Spotlight position
-        raycaster.setFromCamera(mouse, camera);
-        const planeIntersect = raycaster.intersectObject(trackingPlane);
-        if (planeIntersect.length > 0) {
-            const hitPoint = planeIntersect[0].point;
-            spotlightConfig.pos.lerp(hitPoint, 0.15);
-            
-            const lightPos = hitPoint.clone();
-            lightPos.z += 4;
-            cursorLight.position.lerp(lightPos, 0.12);
-            cursorLightTarget.position.lerp(hitPoint, 0.12);
-            
-            const intersects = raycaster.intersectObjects(hitboxes, true);
-            const isHoveringBook = intersects.length > 0;
-            cursorLightTargetIntensity = isHoveringBook ? 1.5 : 0.5;
-            spotlightConfig.intensity += ((isHoveringBook ? 1.0 : 0.8) - spotlightConfig.intensity) * 0.1;
-            spotlightUniforms.uScannerIntensity.value = spotlightConfig.intensity;
-            
-            let currentTab: THREE.Object3D | null = null;
-            if (isHoveringBook && bookState === 'OPEN') {
-                let obj: THREE.Object3D | null = intersects[0].object;
-                while (obj) {
-                    if (obj.userData?.isTab) {
-                        currentTab = obj;
-                        break;
-                    }
-                    obj = obj.parent;
-                }
-            }
-            
-            if (currentTab !== hoveredTab) {
-                if (hoveredTab) {
-                    const mesh = hoveredTab.children.find(c => c instanceof THREE.Mesh && !(c.material instanceof THREE.MeshBasicMaterial)) as THREE.Mesh;
-                    if (mesh && mesh.material) (mesh.material as THREE.MeshPhysicalMaterial).emissiveIntensity = 1.0;
-                }
-                hoveredTab = currentTab;
-                if (hoveredTab) {
-                    const mesh = hoveredTab.children.find(c => c instanceof THREE.Mesh && !(c.material instanceof THREE.MeshBasicMaterial)) as THREE.Mesh;
-                    if (mesh && mesh.material) (mesh.material as THREE.MeshPhysicalMaterial).emissiveIntensity = 2.5; 
-                }
-            }
-        } else {
-            cursorLightTargetIntensity = 0;
-            if (hoveredTab) {
-                const mesh = hoveredTab.children.find(c => c instanceof THREE.Mesh && !(c.material instanceof THREE.MeshBasicMaterial)) as THREE.Mesh;
-                if (mesh && mesh.material) (mesh.material as THREE.MeshPhysicalMaterial).emissiveIntensity = 1.0;
-                hoveredTab = null;
-            }
-        }
-        
-        cursorLight.intensity += (cursorLightTargetIntensity - cursorLight.intensity) * 0.08;
-
-        composer.render();
-    };
-
-    const loop = createLoopController(zone, animate);
-
     const onResize = () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        renderer.setSize(width, height);
+        camera.aspect = width / height;
         camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        composer.setSize(window.innerWidth, window.innerHeight);
     };
     window.addEventListener('resize', onResize);
 
+    // Blast Door logic
+    let targetArchiveOpen = 0.0;
+    const onToggleArchive = ((e: CustomEvent) => {
+        targetArchiveOpen = e.detail.open ? 1.0 : 0.0;
+    }) as EventListener;
+    window.addEventListener('toggle-archive', onToggleArchive);
+
+    // Liquid Preview logic
+    let targetPreviewHover = 0.0;
+    const textureLoader = new THREE.TextureLoader();
+    textureLoader.setCrossOrigin('anonymous');
+    const previewCache = new Map<string, THREE.Texture>();
+    
+    const onPreviewHover = ((e: CustomEvent) => {
+        const url = e.detail.url;
+        if (url) {
+            targetPreviewHover = 1.0;
+            if (previewCache.has(url)) {
+                previewMat.uniforms.tPreview.value = previewCache.get(url);
+            } else {
+                textureLoader.load(url, (tex) => {
+                    previewCache.set(url, tex);
+                    previewMat.uniforms.tPreview.value = tex;
+                });
+            }
+        } else {
+            targetPreviewHover = 0.0;
+        }
+    }) as EventListener;
+    window.addEventListener('project-hover', onPreviewHover);
+
+    const controller = createLoopController(zone, (time: number) => {
+        const t = time * 0.001;
+        shaderMat.uniforms.uTime.value = t;
+        previewMat.uniforms.uTime.value = t;
+        
+        shaderMat.uniforms.uMorphProgress.value += (targetMorph - shaderMat.uniforms.uMorphProgress.value) * 0.05;
+        bgMat.uniforms.uMorphProgress.value = shaderMat.uniforms.uMorphProgress.value;
+        
+        // Asymmetric animation speeds: Slower elegant ocean open, fast snappy close
+        const splitSpeed = targetArchiveOpen > 0.5 ? 0.025 : 0.12;
+        shaderMat.uniforms.uArchiveOpen.value += (targetArchiveOpen - shaderMat.uniforms.uArchiveOpen.value) * splitSpeed;
+        bgMat.uniforms.uArchiveOpen.value = shaderMat.uniforms.uArchiveOpen.value;
+
+        // Preview fade and mouse uniforms
+        previewMat.uniforms.uHoverFade.value += (targetPreviewHover - previewMat.uniforms.uHoverFade.value) * 0.08;
+        previewMat.uniforms.uMousePos.value.lerp(new THREE.Vector2(mouse.x * 0.5 + 0.5, mouse.y * 0.5 + 0.5), 0.1);
+
+        masterGroup.rotation.x += (targetRotX - masterGroup.rotation.x) * 0.05;
+        masterGroup.rotation.y += (targetRotY - masterGroup.rotation.y) * 0.05;
+
+        // Use Raycaster math plane to find exactly where the mouse intersects the Z=0 plane of the grid
+        masterGroup.updateMatrixWorld();
+        raycaster.setFromCamera(mouse, camera);
+        
+        // Z=0 in local space of masterGroup. Simple approximation since rotation is small.
+        const worldZ = masterGroup.position.z; 
+        const distToPlane = (worldZ - raycaster.ray.origin.z) / raycaster.ray.direction.z;
+        if (distToPlane > 0) {
+            const hit = raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, distToPlane);
+            // Smoothly move the reality spotlight
+            shaderMat.uniforms.uMousePos.value.lerp(hit, 0.1);
+            bgMat.uniforms.uMousePos.value.lerp(hit, 0.1);
+        }
+
+        renderer.render(scene, camera);
+    });
+
+    // Precompile shaders and upload geometry to GPU now to prevent a massive 
+    // freeze/black splash when the IntersectionObserver triggers the first render
+    renderer.compile(scene, camera);
+    renderer.render(scene, camera);
+
     return {
         destroy: () => {
-            loop.destroy();
+            controller.destroy();
             window.removeEventListener('resize', onResize);
             window.removeEventListener('mousemove', onMouseMove);
-            canvas.removeEventListener('click', onClick);
-            
-            // Dispose of dynamically generated resources to prevent memory leaks
-            allPages.forEach(page => {
-                const uniforms = page.uniforms as any;
-                if (uniforms && uniforms.tGeometry && uniforms.tGeometry.value) {
-                    uniforms.tGeometry.value.dispose();
-                }
-                const mesh = page.mesh as THREE.Mesh;
-                if (mesh.geometry) mesh.geometry.dispose();
-                if (mesh.material) {
-                    const mat = mesh.material as THREE.MeshPhysicalMaterial;
-                    if (mat.map) mat.map.dispose();
-                    if (mat.emissiveMap) mat.emissiveMap.dispose();
-                    mat.dispose();
-                }
-            });
-
-            hitboxes.forEach(hitbox => {
-                if (hitbox.geometry) hitbox.geometry.dispose();
-                if (hitbox.material) {
-                    if (Array.isArray(hitbox.material)) {
-                        hitbox.material.forEach(m => m.dispose());
-                    } else {
-                        hitbox.material.dispose();
-                    }
-                }
-            });
-
-            trackingPlaneGeom.dispose();
-            
-            composer.dispose();
+            window.removeEventListener('click', onClick);
+            window.removeEventListener('toggle-archive', onToggleArchive);
+            window.removeEventListener('project-hover', onPreviewHover);
             renderer.dispose();
+            atlasTexture.dispose();
+            imageTexture.dispose();
+            shaderMat.dispose();
+            bgMat.dispose();
+            previewMat.dispose();
+            previewPlane.geometry.dispose();
+            planeGeo.dispose();
         }
     };
 }

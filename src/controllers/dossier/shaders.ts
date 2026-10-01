@@ -53,8 +53,8 @@ export const injectSpotlightReveal = (shader: any, extraUniforms: any = null, is
         float spotDist = distance(vWorldPos, uScannerPos);
         float spotInfluence = 1.0 - smoothstep(0.0, uScannerRadius * 0.6, spotDist);
         spotInfluence = pow(spotInfluence, 2.0) * uScannerIntensity;
-        // Push vertices inward (along -Z in local space) creating a dimple
-        transformed.z -= spotInfluence * 0.15;
+        // Push vertices deeply inward (along -Z) to make the monoliths sink away from the light
+        transformed.z -= spotInfluence * 4.0;
     `;
 
 	shader.vertexShader = `

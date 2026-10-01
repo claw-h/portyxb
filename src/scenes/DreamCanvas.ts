@@ -234,6 +234,7 @@ function buildGlyphs(width: number, height: number, previousGlyphs?: Glyph[]): G
 }
 
 async function loadDreamGeometry(): Promise<BufferGeometry> {
+    await MeshoptDecoder.ready;
 	return new Promise((resolve) => {
 		const loader = new GLTFLoader();
         
@@ -564,8 +565,8 @@ function drawOffscreenGlyphs(
 
 	const absVel = Math.abs(scrollVelocity);
  
-	const REVEAL_END = 0.75;
-	const STAGGER_SPAN = 0.28;
+	const REVEAL_END = 0.15;
+	const STAGGER_SPAN = 0.10;
 	let maxGlyphSpeed = 0;
  
 	glyphs.forEach((glyph) => {
@@ -588,12 +589,12 @@ function drawOffscreenGlyphs(
 		const gdist = Math.hypot(gdx, gdy);
 		let repX = 0, repY = 0, proximityAlphaBoost = 0;
  
-		if (gdist < 150 && gdist > 0) {
-			const proximityFactor = Math.pow((150 - gdist) / 150, 2);
-			const force = proximityFactor * 30;
+		if (gdist < 250 && gdist > 0) {
+			const proximityFactor = Math.pow((250 - gdist) / 250, 2);
+			const force = proximityFactor * 80;
 			repX = (gdx / gdist) * force;
 			repY = (gdy / gdist) * force;
-			proximityAlphaBoost = proximityFactor * 0.35;
+			proximityAlphaBoost = proximityFactor * 0.5;
 		}
  
 		const lagY = scrollVelocity * 0.24 * (1 - glyph.revealT * 0.5);
@@ -792,11 +793,11 @@ export function setupDreamCanvas(): LoopController | null {
 	const sectionMetrics = { top: sectionEl.offsetTop, height: sectionEl.offsetHeight };
 
 	function onMouseMove(e: MouseEvent): void {
-		// Recalculate on every move so scroll position doesn't break the math
-		const rect = sectionEl.getBoundingClientRect();
-		
-		mouse.nx = (e.clientX - rect.left) / Math.max(rect.width, 1);
-		mouse.ny = (e.clientY - rect.top) / Math.max(rect.height, 1);
+		// The canvas is sticky at top:0 and fills 100vh, so its visible
+		// area matches the viewport exactly. Normalize against the
+		// viewport — NOT the 300vh section rect, which skews Y.
+		mouse.nx = e.clientX / window.innerWidth;
+		mouse.ny = e.clientY / window.innerHeight;
 	}
 
 	function onResize(): void {
@@ -857,6 +858,15 @@ export function setupDreamCanvas(): LoopController | null {
 		const mouseTiltX = (mouse.nx - 0.5) * 2.0;
 		const mouseTiltY = (mouse.ny - 0.5) * 2.0;
 
+        // Make the scene highly explorable by adding deep camera parallax
+        const targetCamX = mouseTiltX * 4.0;
+        const targetCamY = -mouseTiltY * 2.0;
+        camera.position.x = lerp(camera.position.x, targetCamX, 0.05);
+        camera.position.y = lerp(camera.position.y, targetCamY, 0.05);
+        
+        // Orbit effect looking into the void
+        camera.lookAt(camera.position.x * 0.2, camera.position.y * 0.2, -10);
+
 		instances.forEach((inst) => {
 			const distToCenter = Math.abs(inst.ix);
 			const scrollWave = Math.sin(distToCenter * 0.8 - scrollProgress * 15.0) * (absVel * 0.05);
@@ -871,8 +881,8 @@ export function setupDreamCanvas(): LoopController | null {
 			let stretchX = 1.0;
 
 			if (inst.ix === 0) {
-				// Easing curve: Starts at 5% scroll, ends at 35%
-				const beamProgress = smoothstep(0.15, 0.45, scrollProgress);
+				// Easing curve: Materialize aggressively early and fast
+				const beamProgress = smoothstep(0.0, 0.15, scrollProgress);
 				
 				// Pull it from the deep horizon
 				currentZ += lerp(-150, 0, beamProgress);
@@ -904,25 +914,32 @@ export function setupDreamCanvas(): LoopController | null {
 			inst.mesh.updateMatrix();
 		});
 
-		// Spotlight Raycaster
+		// Spotlight — direct screen-to-world projection
+		// Uses raw NDC + the camera's fixed FOV/aspect to find where the
+		// cursor hits the staircase plane. Bypasses the actual camera object
+		// entirely so camera parallax can't pull the spotlight off-cursor.
 		if (hasFinePointer) {
 			const heroMesh = instances[0]?.mesh;
 			if (heroMesh) {
-				masterGroup.updateMatrixWorld(true);
-				dreamPointerNdc.set(mouse.nx * 2 - 1, -(mouse.ny * 2 - 1));
-				dreamRaycaster.setFromCamera(dreamPointerNdc, camera);
-				
-				const intersects = dreamRaycaster.intersectObject(heroMesh, false);
-				const isHovering = intersects.length > 0;
-				
+				const ndcX = mouse.nx * 2 - 1;
+				const ndcY = -(mouse.ny * 2 - 1);
+
+				// Simple screen-space bounding box for hover state
+				const isHovering = Math.abs(mouse.nx - 0.5) < 0.25 && Math.abs(mouse.ny - 0.5) < 0.25;
 				setHoverTarget('staircase', isHovering);
 
-				if (isHovering) {
-					spotlightConfig.targetPos.copy(intersects[0].point);
-					spotlightConfig.targetIntensity = 1.0;
-				} else {
-					spotlightConfig.targetIntensity = 0.0;
-				}
+				spotlightConfig.targetIntensity = 0.9;
+
+				// Project from NDC onto the staircase's Z plane using the
+				// camera's base origin (z=2), ignoring parallax XY shift.
+				const planeZ = masterGroup.position.z + heroMesh.position.z;
+				const halfTan = Math.tan(camera.fov * 0.5 * Math.PI / 180);
+				const depth = 2 - planeZ; // camera base z=2 minus target plane
+				spotlightConfig.targetPos.set(
+					ndcX * halfTan * camera.aspect * depth,
+					ndcY * halfTan * depth,
+					planeZ
+				);
 			}
 		}
 	// Lerp the spotlight variables for smooth trailing
