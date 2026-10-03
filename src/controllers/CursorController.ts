@@ -1,5 +1,6 @@
 import { onHoverTargetChange } from '../utils/hoverTargets';
 import { isReady } from '../utils/loadState';
+import { playHoverTick, playSwoosh } from '../utils/audio';
 
 export interface CursorController {
 	destroy: () => void;
@@ -21,6 +22,10 @@ export function setupCursor(): CursorController | null {
 	let isHovering = false;
 	let isHeartTarget = false;
 
+	let lastTickX = mouseX;
+	let lastTickY = mouseY;
+	let lastTickTime = performance.now();
+
 	// DOM Elements
 	const coordsElement = document.getElementById('cursor-coords');
 	const focalCharElement = document.getElementById('focal-char');
@@ -38,6 +43,21 @@ export function setupCursor(): CursorController | null {
 			mouseX = window.innerWidth / 2;
 			mouseY = window.innerHeight / 2;
 		}
+
+		const now = performance.now();
+		const dt = Math.max(1, now - lastTickTime);
+		const dx = mouseX - lastTickX;
+		const dy = mouseY - lastTickY;
+		const velocity = Math.sqrt(dx * dx + dy * dy) / dt; // pixels per ms
+
+		if (velocity > 3.0) {
+			const intensity = Math.min(1.5, velocity / 3.0);
+			playSwoosh(intensity);
+		}
+
+		lastTickX = mouseX;
+		lastTickY = mouseY;
+		lastTickTime = now;
 		
 		smoothX += (mouseX - smoothX) * 0.16;
 		smoothY += (mouseY - smoothY) * 0.16;
@@ -97,6 +117,9 @@ export function setupCursor(): CursorController | null {
 	const unsubscribeHover = onHoverTargetChange((target) => {
 		isHovering = target !== null;
 		isHeartTarget = target === 'heart';
+		if (isHovering) {
+			playHoverTick();
+		}
 		
 		lensCursor!.classList.toggle('is-reticle', isHovering && !isHeartTarget);
 		lensCursor!.classList.toggle('is-heart-reticle', isHeartTarget);

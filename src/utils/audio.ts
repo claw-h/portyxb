@@ -530,6 +530,44 @@ export function playNavClick() {
 }
 
 // ---------------------------------------------------------------------------
+// Global UI — Cursor Swoosh
+// ---------------------------------------------------------------------------
+// Wind rush sound modulated by cursor velocity
+let lastSwooshTime = 0;
+export function playSwoosh(intensity: number = 1) {
+	if (!shouldPlay()) return;
+	const now = performance.now();
+	if (now - lastSwooshTime < 350) return; // Debounce so it doesn't overlap messily
+	lastSwooshTime = now;
+
+	const ctx = getContext();
+	if (!ctx || !masterGain || !noiseBuffer) return;
+
+	const noise = ctx.createBufferSource();
+	noise.buffer = noiseBuffer;
+	noise.loop = true; // Buffer is 100ms, swoosh is 300ms, so we loop it
+
+	const filter = ctx.createBiquadFilter();
+	filter.type = 'bandpass';
+	filter.frequency.setValueAtTime(400, ctx.currentTime);
+	filter.frequency.exponentialRampToValueAtTime(1400, ctx.currentTime + 0.1);
+	filter.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.3);
+	filter.Q.value = 1.0;
+
+	const gain = ctx.createGain();
+	gain.gain.setValueAtTime(0, ctx.currentTime);
+	gain.gain.linearRampToValueAtTime(0.04 * Math.min(1.5, intensity), ctx.currentTime + 0.1);
+	gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+
+	noise.connect(filter);
+	filter.connect(gain);
+	gain.connect(masterGain);
+
+	noise.start(ctx.currentTime);
+	noise.stop(ctx.currentTime + 0.3);
+}
+
+// ---------------------------------------------------------------------------
 // Scene 1 — Heart: Continuous Synth Oscillators + Heartbeat
 // ---------------------------------------------------------------------------
 // Arc buzz (square 220Hz bandpass) + ink sub (sine 70Hz) + procedural heartbeat.
