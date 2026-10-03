@@ -944,8 +944,9 @@ export function setupDreamCanvas(): LoopController | null {
 				const ndcX = mouse.nx * 2 - 1;
 				const ndcY = -(mouse.ny * 2 - 1);
 
-				// Simple screen-space bounding box for hover state
-				const isHovering = Math.abs(mouse.nx - 0.5) < 0.25 && Math.abs(mouse.ny - 0.5) < 0.25;
+				// Simple screen-space bounding box for hover state, but only active if scene is in focus
+				const inFocus = scrollProgress > 0.05 && scrollProgress < 0.95;
+				const isHovering = inFocus && Math.abs(mouse.nx - 0.5) < 0.25 && Math.abs(mouse.ny - 0.5) < 0.25;
 				setHoverTarget('staircase', isHovering);
 				footstepSynth?.setHovering(isHovering);
 
@@ -1058,8 +1059,12 @@ initHeavyLifting();
 
 const observer = new IntersectionObserver((entries) => {
 	isVisible = entries[0].isIntersecting;
+	if (!isVisible) {
+		setHoverTarget('staircase', false);
+		footstepSynth?.setHovering(false);
+	}
 }, {
-	rootMargin: '1000px 0px',
+	rootMargin: '100px 0px', // Don't keep it visible 1000px away!
 	threshold: 0
 });
 
