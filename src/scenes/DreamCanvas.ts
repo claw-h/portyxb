@@ -1,3 +1,4 @@
+import { playMaterialize, playGlyphReveal, initFootstepSynth } from "../utils/audio";
 import { 
 	Group,
 	BufferAttribute,
@@ -58,6 +59,9 @@ interface MouseState {
  
 let _lenisVelocity = 0;
 let _scrollProgress = 0;
+let hasMaterialized = false;
+let hasRevealedFirstGlyph = false;
+let hasRevealedLastGlyph = false;
 let _visualScrollProgress = 0;
  
 export function setDreamScrollVelocity(v: number): void { _lenisVelocity = v; }
@@ -105,6 +109,7 @@ const CustomLensShader = {
 		uVelocity: { value: 0.0 },
 		uMouseSpeed: { value: 0.0 },
 		uTime: { value: 0.0 },
+		uCollapse: { value: 0.0 },
 		uResolution: { value: new Vector2(1, 1) }
 	},
 	vertexShader: `
@@ -121,6 +126,7 @@ const CustomLensShader = {
 		uniform float uVelocity;
 		uniform float uMouseSpeed;
 		uniform float uTime;
+		uniform float uCollapse;
 		uniform vec2 uResolution;
 		varying vec2 vUv;
  
@@ -136,7 +142,7 @@ const CustomLensShader = {
 			// seam where the lens circle meets the black surround.
 			float edgeFade = 1.0 - smoothstep(uLensRadius * 0.92, uLensRadius, dist);
 			if (dist > uLensRadius * 1.15) {
-				gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0);
+				gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0); // Changed to transparent for overlapping singularity!
 				return;
 			}
  
@@ -148,7 +154,8 @@ const CustomLensShader = {
  
 			float caBase = 0.005 * pow(normDist, 2.0);
 			float caDynamic = (abs(uVelocity) * 0.0025) + (uMouseSpeed * 0.0012);
-			float caAmount = caBase + caDynamic;
+			// Spike the CA drastically as the collapse happens (singularity)
+			float caAmount = caBase + caDynamic + (uCollapse * 0.15);
  
 			// ── NEW: SCROLL-DRIVEN DIRECTIONAL MOTION BLUR ──
 			vec3 finalColor = vec3(0.0);
@@ -573,6 +580,15 @@ function drawOffscreenGlyphs(
 		const staggerOffset = (glyph.index / glyphs.length) * STAGGER_SPAN;
 		const localT = clamp((scrollProgress - staggerOffset) / (REVEAL_END - staggerOffset), 0, 1);
 		glyph.revealT = smoothstep(0, 1, localT);
+		
+		if (glyph.index === 0 && glyph.revealT > 0.1 && !hasRevealedFirstGlyph) {
+			hasRevealedFirstGlyph = true;
+			playGlyphReveal();
+		}
+		if (glyph.index === glyphs.length - 1 && glyph.revealT > 0.9 && !hasRevealedLastGlyph) {
+			hasRevealedLastGlyph = true;
+			playGlyphReveal();
+		}
  
 		let waveJitterX = 0; let waveJitterY = 0;
 		if (!reducedMotion && absVel > 3.8) {
@@ -648,6 +664,7 @@ export function setupDreamCanvas(): LoopController | null {
 	// initHeavyLifting's listeners/GPU resources live in its own closure;
 	// this is how the outer destroy() reaches in to release them.
 	let releaseResources: (() => void) | null = null;
+	const footstepSynth = initFootstepSynth();
  
 	// 1. Build the scene instantly, but keep it dormant
 	const initHeavyLifting = async () => {
@@ -684,11 +701,10 @@ export function setupDreamCanvas(): LoopController | null {
 		return;
 	}
 
-	const renderer = new WebGLRenderer({ canvas: outputCanvas, alpha: false, antialias: false, powerPreference: 'high-performance' });	
+	const renderer = new WebGLRenderer({ canvas: outputCanvas, alpha: true, antialias: false, powerPreference: 'high-performance' });	
 	renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 
 	const scene = new Scene();
-	scene.background = new Color(0x000000);
 
 	const camera = new PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
 	camera.position.z = 2;
@@ -890,6 +906,10 @@ export function setupDreamCanvas(): LoopController | null {
 				// Stretch it into a continuous light-trail
 				stretchX = lerp(60, 1, beamProgress);
 
+				if (beamProgress > 0.8 && !hasMaterialized) {
+					hasMaterialized = true;
+					playMaterialize();
+				}
 				// Feed HDR flare values into the shader
 				const mat = inst.mesh.material as ShaderMaterial;
 				mat.uniforms.uFlare.value = lerp(10.0, 0.0, beamProgress); 
@@ -927,6 +947,7 @@ export function setupDreamCanvas(): LoopController | null {
 				// Simple screen-space bounding box for hover state
 				const isHovering = Math.abs(mouse.nx - 0.5) < 0.25 && Math.abs(mouse.ny - 0.5) < 0.25;
 				setHoverTarget('staircase', isHovering);
+				footstepSynth?.setHovering(isHovering);
 
 				spotlightConfig.targetIntensity = 0.9;
 
@@ -991,6 +1012,7 @@ export function setupDreamCanvas(): LoopController | null {
 		lensPass.uniforms.uVelocity.value = prefersReducedMotion ? 0 : scrollVelocity;
 		lensPass.uniforms.uMouseSpeed.value = prefersReducedMotion ? 0 : mouse.speed;
 		lensPass.uniforms.uTime.value = time * 0.001;
+		lensPass.uniforms.uCollapse.value = clamp((scrollProgress - 0.75) / 0.25, 0.0, 1.0);
 
 		updateEdgeNulls();
 		wireUniforms.uTime.value = time * 0.001;
@@ -1009,6 +1031,7 @@ export function setupDreamCanvas(): LoopController | null {
 		window.removeEventListener('resize', onResize);
 		resizeObserver.disconnect();
 		setHoverTarget('staircase', false);
+		footstepSynth?.destroy();
 
 		textPlane.geometry.dispose();
 		textMaterial.dispose();

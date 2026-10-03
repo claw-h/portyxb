@@ -388,6 +388,99 @@ export function playGlyphReveal() {
 }
 
 // ---------------------------------------------------------------------------
+// Scene 2 — DreamCanvas: Distant Echoing Footsteps
+// ---------------------------------------------------------------------------
+// Procedural distant stone footsteps that play in a slow loop while hovering
+export function initFootstepSynth() {
+	if (!shouldPlay()) return { setHovering: () => {}, destroy: () => {} };
+	const ctx = getContext();
+	if (!ctx || !masterGain || !noiseBuffer) return { setHovering: () => {}, destroy: () => {} };
+
+	let isHovering = false;
+	let intervalId: any = null;
+	let stepCount = 0;
+
+	function playFootstep() {
+		if (ctx?.state === 'suspended') return;
+		
+		// Alternate slight pitch and timing for left/right steps
+		stepCount++;
+		const isLeft = stepCount % 2 === 0;
+		const baseFreq = isLeft ? 75 : 85;
+
+		// Thud
+		const osc = ctx!.createOscillator();
+		osc.type = 'sine';
+		osc.frequency.setValueAtTime(baseFreq, ctx!.currentTime);
+		osc.frequency.exponentialRampToValueAtTime(30, ctx!.currentTime + 0.1);
+
+		const gain = ctx!.createGain();
+		gain.gain.setValueAtTime(0, ctx!.currentTime);
+		gain.gain.linearRampToValueAtTime(0.12, ctx!.currentTime + 0.01);
+		gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + 0.15);
+
+		// Stone crunch (noise)
+		const noise = ctx!.createBufferSource();
+		noise.buffer = noiseBuffer!;
+		
+		const filter = ctx!.createBiquadFilter();
+		filter.type = 'bandpass';
+		filter.frequency.value = isLeft ? 800 : 900;
+
+		const noiseGain = ctx!.createGain();
+		noiseGain.gain.setValueAtTime(0.04, ctx!.currentTime);
+		noiseGain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + 0.08);
+
+		// Echo/Delay for surreal dream vibe
+		const delay = ctx!.createDelay();
+		delay.delayTime.value = 0.35;
+		const delayGain = ctx!.createGain();
+		delayGain.gain.value = 0.25;
+
+		osc.connect(gain);
+		noise.connect(filter);
+		filter.connect(noiseGain);
+
+		// Dry signal
+		gain.connect(masterGain!);
+		noiseGain.connect(masterGain!);
+
+		// Wet signal (delay)
+		gain.connect(delay);
+		noiseGain.connect(delay);
+		delay.connect(delayGain);
+		delayGain.connect(masterGain!);
+
+		osc.start();
+		osc.stop(ctx!.currentTime + 0.15);
+		noise.start();
+		noise.stop(ctx!.currentTime + 0.08);
+	}
+
+	return {
+		setHovering: (hovering: boolean) => {
+			if (hovering !== isHovering) {
+				isHovering = hovering;
+				if (isHovering) {
+					playFootstep(); // Play first step immediately
+					intervalId = setInterval(() => {
+						playFootstep();
+					}, 750); // Slow, deliberate walk (750ms between steps)
+				} else {
+					if (intervalId) {
+						clearInterval(intervalId);
+						intervalId = null;
+					}
+				}
+			}
+		},
+		destroy: () => {
+			if (intervalId) clearInterval(intervalId);
+		}
+	};
+}
+
+// ---------------------------------------------------------------------------
 // Scene 3 — Dossier: Data Scramble
 // ---------------------------------------------------------------------------
 // Low-frequency rumble scramble — bass-heavy with muffled randomization
