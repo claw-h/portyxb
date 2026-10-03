@@ -1,9 +1,11 @@
 import type Lenis from 'lenis';
+import { playSnapForward, playSnapReverse, playZoneCrossing, setArchiveMelodyActive } from '../utils/audio';
 
 export class DiscreteScrollController {
     private lenis: Lenis;
     private snapPoints: HTMLElement[] = [];
     private currentIndex = 0;
+    private zoneBoundaries = new Set([8, 11]);
     
     private wheelAccumulator = 0;
     private lastWheelEventTime = 0;
@@ -22,6 +24,7 @@ export class DiscreteScrollController {
         this.lenis.options.smoothWheel = false;
         
         this.currentIndex = this.getClosestIndex(window.scrollY);
+        setArchiveMelodyActive(this.currentIndex >= 11);
     }
 
     private updateSnapPoints = () => {
@@ -57,6 +60,7 @@ export class DiscreteScrollController {
     private onResize = () => {
         this.updateSnapPoints();
         this.currentIndex = this.getClosestIndex(window.scrollY);
+        setArchiveMelodyActive(this.currentIndex >= 11);
     }
 
     private onWheel = (e: WheelEvent) => {
@@ -84,12 +88,29 @@ export class DiscreteScrollController {
         if (Math.abs(this.wheelAccumulator) > 50) {
             const delta = Math.sign(this.wheelAccumulator);
             
+            let moved = false;
+            let forward = true;
             if (delta > 0 && this.currentIndex < this.snapPoints.length - 1) {
                 this.currentIndex++;
+                forward = true;
+                moved = true;
                 this.scrollToCurrent();
             } else if (delta < 0 && this.currentIndex > 0) {
                 this.currentIndex--;
+                forward = false;
+                moved = true;
                 this.scrollToCurrent();
+            }
+
+            if (moved) {
+                if (this.zoneBoundaries.has(this.currentIndex)) {
+                    playZoneCrossing();
+                } else if (forward) {
+                    playSnapForward();
+                } else {
+                    playSnapReverse();
+                }
+                setArchiveMelodyActive(this.currentIndex >= 11);
             }
             
             this.wheelAccumulator = 0;

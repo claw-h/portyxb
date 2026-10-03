@@ -563,6 +563,108 @@ export function playDataPing() {
 }
 
 // ---------------------------------------------------------------------------
+// Scene 3 — Dossier: Background Synth Melody
+// ---------------------------------------------------------------------------
+let archiveMelodyInterval: any = null;
+let archiveMelodyActive = false;
+let archiveDelayNet: { in: GainNode, destroy: () => void } | null = null;
+
+export function setArchiveMelodyActive(active: boolean) {
+	if (!shouldPlay()) return;
+	const ctx = getContext();
+	if (!ctx || !masterGain) return;
+
+	if (active === archiveMelodyActive) return;
+	archiveMelodyActive = active;
+
+	if (active) {
+		if (!archiveDelayNet) {
+			const delay = ctx.createDelay();
+			delay.delayTime.value = 0.4; // 400ms delay
+			const feedback = ctx.createGain();
+			feedback.gain.value = 0.45;
+			const filter = ctx.createBiquadFilter();
+			filter.type = 'lowpass';
+			filter.frequency.value = 1200;
+
+			const delayIn = ctx.createGain();
+			delayIn.gain.value = 1.0;
+			const delayOut = ctx.createGain();
+			delayOut.gain.value = 0.25;
+
+			delayIn.connect(delay);
+			delay.connect(feedback);
+			feedback.connect(filter);
+			filter.connect(delay);
+			delay.connect(delayOut);
+			delayOut.connect(masterGain);
+
+			archiveDelayNet = {
+				in: delayIn,
+				destroy: () => {
+					delayIn.disconnect();
+					delay.disconnect();
+					feedback.disconnect();
+					filter.disconnect();
+					delayOut.disconnect();
+				}
+			};
+		}
+
+		// Blade Runner-esque C Minor Pentatonic + 9th (C, Eb, F, G, Bb, D)
+		const scale = [130.81, 155.56, 174.61, 196.00, 233.08, 261.63, 293.66, 311.13, 349.23, 392.00, 466.16];
+		
+		function scheduleNote() {
+			if (!archiveMelodyActive || ctx?.state === 'suspended') return;
+			
+			if (Math.random() > 0.3) { // 70% chance to play a note (sparse generative)
+				const freq = scale[Math.floor(Math.random() * scale.length)];
+				const isHigh = freq > 250;
+				
+				const osc = ctx!.createOscillator();
+				osc.type = isHigh ? 'square' : 'sawtooth';
+				osc.frequency.value = freq;
+
+				const filter = ctx!.createBiquadFilter();
+				filter.type = 'lowpass';
+				filter.frequency.setValueAtTime(300, ctx!.currentTime);
+				filter.frequency.exponentialRampToValueAtTime(isHigh ? 1800 : 800, ctx!.currentTime + 0.04);
+				filter.frequency.exponentialRampToValueAtTime(200, ctx!.currentTime + 1.2);
+
+				const gain = ctx!.createGain();
+				gain.gain.setValueAtTime(0, ctx!.currentTime);
+				gain.gain.linearRampToValueAtTime(0.015, ctx!.currentTime + 0.04);
+				gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + 1.2);
+
+				osc.connect(filter);
+				filter.connect(gain);
+				gain.connect(masterGain!);
+				if (archiveDelayNet) {
+					gain.connect(archiveDelayNet.in);
+				}
+
+				osc.start(ctx!.currentTime);
+				osc.stop(ctx!.currentTime + 1.2);
+			}
+
+			// Quantize random time to a musical grid (8th and 16th notes at ~120BPM)
+			const steps = [250, 500, 750, 1000];
+			const nextTime = steps[Math.floor(Math.random() * steps.length)];
+			
+			archiveMelodyInterval = setTimeout(scheduleNote, nextTime);
+		}
+		
+		scheduleNote();
+		
+	} else {
+		if (archiveMelodyInterval) {
+			clearTimeout(archiveMelodyInterval);
+			archiveMelodyInterval = null;
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Global UI — Hover Tick (80ms debounce built-in)
 // ---------------------------------------------------------------------------
 // Subliminal sub-bass nudge
