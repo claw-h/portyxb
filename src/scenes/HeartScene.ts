@@ -1,3 +1,4 @@
+import { initHeartSynth } from "../utils/audio";
 import { 
 	MeshPhysicalMaterial,
 	LineBasicMaterial,
@@ -94,11 +95,66 @@ const SLICE_NAMES: string[] = [
 ];
 
 const SLICE_DESCRIPTIONS: string[] = [
-	'The heart\'s blunt lower point, formed mainly by the left ventricle\'s thick muscular wall. This is where the apical impulse can be felt against the chest.',
-	'Thick left ventricular myocardium doing the heavy lifting of systemic circulation, alongside the thinner right ventricular free wall.',
-	'Both ventricles in cross-section, separated by the interventricular septum. Papillary muscles and chordae tendineae anchor the valve leaflets here.',
-	'The atrioventricular boundary: mitral and tricuspid valves control flow from atria into ventricles, preventing backflow during contraction.',
-	'The heart\'s upper surface, where the great vessels take root: aorta, pulmonary artery, superior vena cava, and pulmonary veins.',
+    `<div style="display:flex; flex-direction:column; gap:8px;">
+        <p style="margin:0; font-size:13px; color:#a6d8ff; line-height:1.4;">The heart's blunt lower point, formed mainly by the left ventricle's thick muscular wall. This is where the apical impulse can be felt against the chest.</p>
+        <div style="display:flex; justify-content:space-between; font-size:11px; border-top:1px solid rgba(0,170,255,0.2); padding-top:6px; margin-top:4px; font-family:monospace;">
+            <span>WALL: <strong style="color:#0ff">12-15mm</strong></span>
+            <span>KINETICS: <strong style="color:#0ff">TORSION</strong></span>
+        </div>
+        <svg viewBox="0 0 100 12" style="width:100%; height:12px; margin-top:2px;">
+            <rect x="0" y="2" width="100" height="8" fill="rgba(0,170,255,0.15)"/>
+            <rect x="0" y="2" width="85" height="8" fill="#00aaff"/>
+            <text x="50" y="9.5" fill="#05070a" font-size="7" font-weight="bold" text-anchor="middle" font-family="monospace">FORCE GENERATION 85%</text>
+        </svg>
+    </div>`,
+    `<div style="display:flex; flex-direction:column; gap:8px;">
+        <p style="margin:0; font-size:13px; color:#a6d8ff; line-height:1.4;">Thick left ventricular myocardium doing the heavy lifting of systemic circulation, alongside the thinner right ventricular free wall.</p>
+        <div style="display:flex; justify-content:space-between; font-size:11px; border-top:1px solid rgba(0,170,255,0.2); padding-top:6px; margin-top:4px; font-family:monospace;">
+            <span>SYS_P(LV): <strong style="color:#0ff">120mmHg</strong></span>
+            <span>SYS_P(RV): <strong style="color:#0ff">25mmHg</strong></span>
+        </div>
+        <svg viewBox="0 0 100 12" style="width:100%; height:12px; margin-top:2px;">
+            <rect x="0" y="2" width="100" height="8" fill="rgba(0,170,255,0.15)"/>
+            <rect x="0" y="2" width="60" height="8" fill="#00aaff"/>
+            <text x="50" y="9.5" fill="#05070a" font-size="7" font-weight="bold" text-anchor="middle" font-family="monospace">STROKE VOLUME 70mL</text>
+        </svg>
+    </div>`,
+    `<div style="display:flex; flex-direction:column; gap:8px;">
+        <p style="margin:0; font-size:13px; color:#a6d8ff; line-height:1.4;">Both ventricles in cross-section, separated by the interventricular septum. Papillary muscles and chordae tendineae anchor the valve leaflets here.</p>
+        <div style="display:flex; justify-content:space-between; font-size:11px; border-top:1px solid rgba(0,170,255,0.2); padding-top:6px; margin-top:4px; font-family:monospace;">
+            <span>SEPTUM: <strong style="color:#0ff">10-12mm</strong></span>
+            <span>ANCHORS: <strong style="color:#0ff">ACTIVE</strong></span>
+        </div>
+        <svg viewBox="0 0 100 12" style="width:100%; height:12px; margin-top:2px;">
+            <rect x="0" y="2" width="100" height="8" fill="rgba(0,170,255,0.15)"/>
+            <rect x="0" y="2" width="45" height="8" fill="#00aaff"/>
+            <text x="50" y="9.5" fill="#05070a" font-size="7" font-weight="bold" text-anchor="middle" font-family="monospace">TENSION LOAD 45%</text>
+        </svg>
+    </div>`,
+    `<div style="display:flex; flex-direction:column; gap:8px;">
+        <p style="margin:0; font-size:13px; color:#a6d8ff; line-height:1.4;">The atrioventricular boundary: mitral and tricuspid valves control flow from atria into ventricles, preventing backflow during contraction.</p>
+        <div style="display:flex; justify-content:space-between; font-size:11px; border-top:1px solid rgba(0,170,255,0.2); padding-top:6px; margin-top:4px; font-family:monospace;">
+            <span>VALVES: <strong style="color:#0ff">MITRAL/TRI</strong></span>
+            <span>STATE: <strong style="color:#0ff">SYNCED</strong></span>
+        </div>
+        <svg viewBox="0 0 100 12" style="width:100%; height:12px; margin-top:2px;">
+            <rect x="0" y="2" width="100" height="8" fill="rgba(0,170,255,0.15)"/>
+            <rect x="0" y="2" width="95" height="8" fill="#00aaff"/>
+            <text x="50" y="9.5" fill="#05070a" font-size="7" font-weight="bold" text-anchor="middle" font-family="monospace">SEAL INTEGRITY 99%</text>
+        </svg>
+    </div>`,
+    `<div style="display:flex; flex-direction:column; gap:8px;">
+        <p style="margin:0; font-size:13px; color:#a6d8ff; line-height:1.4;">The heart's upper surface, where the great vessels take root: aorta, pulmonary artery, superior vena cava, and pulmonary veins.</p>
+        <div style="display:flex; justify-content:space-between; font-size:11px; border-top:1px solid rgba(0,170,255,0.2); padding-top:6px; margin-top:4px; font-family:monospace;">
+            <span>FLOW(AO): <strong style="color:#0ff">5 L/min</strong></span>
+            <span>O2 SAT: <strong style="color:#0ff">98%</strong></span>
+        </div>
+        <svg viewBox="0 0 100 12" style="width:100%; height:12px; margin-top:2px;">
+            <rect x="0" y="2" width="100" height="8" fill="rgba(0,170,255,0.15)"/>
+            <rect x="0" y="2" width="100" height="8" fill="#00aaff"/>
+            <text x="50" y="9.5" fill="#05070a" font-size="7" font-weight="bold" text-anchor="middle" font-family="monospace">FLOW RATE 100%</text>
+        </svg>
+    </div>`
 ];
 
 const EMISSIVE_COOL = new Color(0x0a1f3d);
@@ -270,11 +326,23 @@ async function buildSlicesFromBuffers(
 		wire.scale.setScalar(1.006);
 		edges.scale.setScalar(1.011);
 
-		holder.add(solid, wire, edges);
+		// Create a low-poly proxy box matching the slice bounds for cheap raycasting
+		const box = sliceGeometry.boundingBox!;
+		const size = new Vector3();
+		const center = new Vector3();
+		box.getSize(size);
+		box.getCenter(center);
+		
+		const proxyGeo = new BoxGeometry(size.x, size.y, size.z);
+		proxyGeo.translate(center.x, center.y, center.z);
+		const proxyMat = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+		const proxy = new Mesh(proxyGeo, proxyMat);
+
+		holder.add(solid, wire, edges, proxy);
 		holder.userData.materials = { solid: solidMaterial, wire: wireMaterial, edges: edgeMaterial };
 		group.add(holder);
 		slices.push(holder);
-		solids.push(solid);
+		solids.push(proxy);
 	}
 
 	return { slices, solids };
@@ -554,8 +622,12 @@ function createSparkSystem(sparkCount = 140, spotlight: typeof spotlightUniforms
 		const lifeAttr = geometry.attributes.aLife;
 		const velAttr = geometry.attributes.aVelocity;
 
+		const posArr = posAttr.array as Float32Array;
+		const lifeArr = lifeAttr.array as Float32Array;
+		const velArr = velAttr.array as Float32Array;
+
 		for (let i = 0; i < sparkCount; i++) {
-			let life = lifeAttr.getX(i);
+			let life = lifeArr[i];
 			life -= LIFE_DECAY * lifeDecayJitter[i] * dt;
 
 			if (life <= 0) {
@@ -563,25 +635,26 @@ function createSparkSystem(sparkCount = 140, spotlight: typeof spotlightUniforms
 				continue;
 			}
 
-			lifeAttr.setX(i, life);
+			lifeArr[i] = life;
 
-			let vx = velAttr.getX(i);
-			let vy = velAttr.getY(i);
-			let vz = velAttr.getZ(i);
+			let i3 = i * 3;
+			let vx = velArr[i3];
+			let vy = velArr[i3 + 1];
+			let vz = velArr[i3 + 2];
 
 			vy -= GRAVITY * dt;
 
-			const n = turbulence(i, posAttr.getY(i), tSec);
+			const n = turbulence(i, posArr[i3 + 1], tSec);
 			vx = vx * Math.pow(DRAG, dt) + n * TURBULENCE_STRENGTH * dt;
 			vz = vz * Math.pow(DRAG, dt);
 
-			velAttr.setX(i, vx);
-			velAttr.setY(i, vy);
-			velAttr.setZ(i, vz);
+			velArr[i3] = vx;
+			velArr[i3 + 1] = vy;
+			velArr[i3 + 2] = vz;
 
-			posAttr.setX(i, posAttr.getX(i) + vx * dt);
-			posAttr.setY(i, posAttr.getY(i) + vy * dt);
-			posAttr.setZ(i, posAttr.getZ(i) + vz * dt);
+			posArr[i3] += vx * dt;
+			posArr[i3 + 1] += vy * dt;
+			posArr[i3 + 2] += vz * dt;
 		}
 
 		posAttr.needsUpdate = true;
@@ -714,48 +787,12 @@ export function setupHeartScene(): LoopController | null {
 	let pBot = 0;
 	let cachedH = 0;
 
-	let audioCtx: AudioContext | null = null;
-    let arcOsc: OscillatorNode | null = null;
-    let arcGain: GainNode | null = null;
-    let inkOsc: OscillatorNode | null = null;
-    let inkGain: GainNode | null = null;
+	let heartSynth = initHeartSynth();
 
     let maxProgress = 0;
     let decoupledDischargeIntensity = 0;
     let dischargeActive = false;
     let isHoveringPrevState = false;
-
-	function initSynthEngine() {
-        if (audioCtx) return;
-        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-        audioCtx = new AudioContextClass();
-
-        arcOsc = audioCtx.createOscillator();
-        arcGain = audioCtx.createGain();
-        const arcFilter = audioCtx.createBiquadFilter();
-        
-        arcOsc.type = 'square';
-        arcOsc.frequency.setValueAtTime(220, audioCtx.currentTime); 
-        arcFilter.type = 'bandpass';
-        arcFilter.frequency.setValueAtTime(1800, audioCtx.currentTime); 
-
-        arcOsc.connect(arcFilter);
-        arcFilter.connect(arcGain);
-        arcGain.connect(audioCtx.destination);
-        arcGain.gain.setValueAtTime(0, audioCtx.currentTime); 
-        arcOsc.start();
-
-        inkOsc = audioCtx.createOscillator();
-        inkGain = audioCtx.createGain();
-        
-        inkOsc.type = 'sine';
-        inkOsc.frequency.setValueAtTime(70, audioCtx.currentTime);
-
-        inkOsc.connect(inkGain);
-        inkGain.connect(audioCtx.destination);
-        inkGain.gain.setValueAtTime(0, audioCtx.currentTime); 
-        inkOsc.start();
-    }
 
 	function updateBorderLength() {
 		if (borderPaths.length === 2 && borderSvg) {
@@ -1042,18 +1079,12 @@ export function setupHeartScene(): LoopController | null {
         composer.render();
 		await new Promise(r => setTimeout(r, 20));
 
-		// Create an invisible proxy cylinder for raycasting to eliminate CPU overhead
-		// visible: true is required for Raycaster, but colorWrite/depthWrite = false makes it invisible
-		const proxyGeo = new CylinderGeometry(1.0, 0.9, 2.4, 16);
-		const proxyMat = new MeshBasicMaterial({ colorWrite: false, depthWrite: false });
-		const proxyMesh = new Mesh(proxyGeo, proxyMat);
-		heartGroup.add(proxyMesh);
-		solidMeshes = [proxyMesh]; 
+		// We now use actual slice meshes for raycasting to correctly track them when dissected.
 
 		markReady('heart');
 	});
 	
-	const stats = new StatsGl({ trackGPU: true });
+	const stats = new StatsGl({ trackGPU: false });
 	stats.init(renderer);
 	stats.dom.style.display = 'none'; // Keep hidden, we only use it for data
 	document.body.appendChild(stats.dom);
@@ -1182,6 +1213,8 @@ export function setupHeartScene(): LoopController | null {
 	}
 
     renderer.info.autoReset = false;
+    let lastUITime = 0;
+
     const render = (time: number): void => {
         renderer.info.reset();
         const scrollVelocity = Math.abs(currentProgress - prevProgress);
@@ -1238,6 +1271,15 @@ export function setupHeartScene(): LoopController | null {
         }
 
         const flatlineFactor = 1.0 - smoothstep(0.0, 0.06, dissectionProgress);
+
+        // Drive the procedural heartbeat — thumps at 65 BPM, dies on dissection
+        heartSynth?.beat(beatPhase, flatlineFactor);
+        
+        // Deep sub-bass as the heart slides apart
+        heartSynth?.setInkGain(smoothstep(0.1, 0.9, dissectionProgress) * 0.2);
+        
+        // 55Hz electric transformer hum when discharge arcs are active
+        heartSynth?.setArcGain(decoupledDischargeIntensity * 0.15);
 
         heartGroup.rotation.y = rotateHorizontal * Math.PI * 2 + Math.sin(time * 0.00022) * 0.035 * heartFade;
         heartGroup.rotation.x = -0.08 + rotateVertical * Math.PI * 2;
@@ -1300,14 +1342,12 @@ export function setupHeartScene(): LoopController | null {
             if (isIntersecting && isVisible) {
                 spotlightConfig.targetPos.copy(intersects[0].point);
                 
-                // We are raycasting against the single invisible proxy cylinder
-                // Convert world intersection point to local space to map to the 5 slices
-                const localPoint = intersects[0].point.clone();
-                heartGroup.worldToLocal(localPoint);
-                
-                // Cylinder is 2.4 units tall (-1.2 to 1.2). Slice 0 is bottom, Slice 4 is top.
-                const normalizedY = (localPoint.y + 1.2) / 2.4;
-                hoveredSliceIndex = Math.max(0, Math.min(SLICE_COUNT - 1, Math.floor(normalizedY * SLICE_COUNT)));
+                const object = intersects[0].object;
+                if (object && object.parent && typeof object.parent.userData.index === 'number') {
+                    hoveredSliceIndex = object.parent.userData.index;
+                } else {
+                    hoveredSliceIndex = -1;
+                }
             } else {
                 hoveredSliceIndex = -1;
             }
@@ -1324,56 +1364,61 @@ export function setupHeartScene(): LoopController | null {
             hoveredSliceIndex = -1;
         }
 
-        // Smoothstep crossfade: pre-dissection panels fade out over 0.52–0.62
-        const panelVisibility = smoothstep(0.62, 0.52, currentProgress) * smoothstep(0.01, 0.04, currentProgress);
+        // Throttle all DOM layout/paint heavy UI updates to ~15fps (every 66ms)
+        const uiNeedsUpdate = time - lastUITime > 66;
 
+        const panelVisibility = smoothstep(0.62, 0.52, currentProgress) * smoothstep(0.01, 0.04, currentProgress);
         const SCALE = 0.40;
         const PANEL_BASE_WIDTH = 530; 
         const actualPanelWidth = PANEL_BASE_WIDTH * SCALE;
 
-        const leftPanelX = window.innerWidth * (-0.1); 
-        const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
-        const panelY = window.innerHeight * 0.22;      
+        if (uiNeedsUpdate) {
+            const leftPanelX = window.innerWidth * (-0.1); 
+            const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
+            const panelY = window.innerHeight * 0.22;      
 
-        const screenWidth = window.innerWidth;
-        const screenCenter = screenWidth / 2;
-        const maxRotationY = 5;  
-        const maxDepthZ = -300;   
+            const screenWidth = window.innerWidth;
+            const screenCenter = screenWidth / 2;
+            const maxRotationY = 5;  
+            const maxDepthZ = -300;   
 
-        const leftNormX = (leftPanelX - screenCenter) / screenCenter; 
-        const leftRotationY = leftNormX * -maxRotationY; 
-        const leftZ = Math.abs(leftNormX) * maxDepthZ;
+            const leftNormX = (leftPanelX - screenCenter) / screenCenter; 
+            const leftRotationY = leftNormX * -maxRotationY; 
+            const leftZ = Math.abs(leftNormX) * maxDepthZ;
 
-        const rightNormX = (rightPanelX - screenCenter) / screenCenter;
-        const rightRotationY = rightNormX * -maxRotationY;
-        const rightZ = Math.abs(rightNormX) * maxDepthZ;
+            const rightNormX = (rightPanelX - screenCenter) / screenCenter;
+            const rightRotationY = rightNormX * -maxRotationY;
+            const rightZ = Math.abs(rightNormX) * maxDepthZ;
 
-        panelManager.update('telemetry-left', {
-            x: leftPanelX,
-            y: panelY,
-            z: leftZ,                 
-            rotationY: leftRotationY, 
-            opacity: panelVisibility,
-            values: {
-                heartFade: heartFade * 100,
-                dissection: dissectionProgress * 100,
-                progressKnob: currentProgress * 100,
-                progressPct: currentProgress * 100
-            }
-        });
+            panelManager.update('telemetry-left', {
+                x: leftPanelX,
+                y: panelY,
+                z: leftZ,                 
+                rotationY: leftRotationY, 
+                opacity: panelVisibility,
+                values: {
+                    heartFade: heartFade * 100,
+                    dissection: dissectionProgress * 100,
+                    progressKnob: currentProgress * 100,
+                    progressPct: currentProgress * 100
+                }
+            });
 
-        panelManager.update('telemetry-right', {
-            x: rightPanelX - 300,
-            y: panelY,
-            z: rightZ,                  
-            rotationY: rightRotationY,  
-            opacity: panelVisibility,
-            values: {
-                lat: mouse.targetY * 100,
-                long: mouse.targetX * 100,
-                intersect: isIntersecting 
-            }
-        });
+            panelManager.update('telemetry-right', {
+                x: rightPanelX - 300,
+                y: panelY,
+                z: rightZ,                  
+                rotationY: rightRotationY,  
+                opacity: panelVisibility,
+                values: {
+                    lat: mouse.targetY * 100,
+                    long: mouse.targetX * 100,
+                    intersect: isIntersecting 
+                }
+            });
+
+            lastUITime = time;
+        }
 
         // -----------------------------------------------------------------------
         // Tissue Analysis Modal — Shrink/Expand with 1s Dwell
@@ -1491,6 +1536,7 @@ export function setupHeartScene(): LoopController | null {
         inkPass.uniforms.uTime.value = time * 0.001;
         inkPass.uniforms.uProgress.value = smoothstep(0.0, 1.0, inkProgress);
         inkPass.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+
 		gridMaterial.uniforms.uTime.value = time * 0.001;
 
         composer.render();
@@ -1511,36 +1557,35 @@ export function setupHeartScene(): LoopController | null {
         const fpsLog = statsAny.averageFps?.logs;
         const statsFps = (fpsLog && fpsLog.length > 0) ? fpsLog[fpsLog.length - 1] : currentFps;
 
-        // Position strictly in the top right corner
-        // The panel's base width is 530px, scaled via CSS var(--panel-scale, 0.70).
-        // Since transform-origin is center, we must offset by ~500 to keep the scaled edge in bounds.
-        const engineMargin = 24;
-        const engineX = window.innerWidth - 600;
-        const engineY = engineMargin;
-        
-        const engineVisibility = smoothstep(0.01, 0.04, currentProgress) * (1.0 - smoothstep(0.92, 0.94, currentProgress));
-        // Start collapsed, then expand (0 -> 1) exactly when the first set of telemetry panels fades out (0.52 - 0.62)
-        const engineExpanded = smoothstep(0.52, 0.62, currentProgress);
+        if (uiNeedsUpdate) {
+            // Position strictly in the top right corner
+            const engineMargin = 24;
+            const engineX = window.innerWidth - 600;
+            const engineY = engineMargin;
+            
+            const engineVisibility = smoothstep(0.01, 0.04, currentProgress) * (1.0 - smoothstep(0.92, 0.94, currentProgress));
+            const engineExpanded = smoothstep(0.52, 0.62, currentProgress);
 
-        panelManager.update('engine-diagnostics', {
-            x: engineX,
-            y: engineY,
-            z: 0, // Flatten perspective
-            rotationY: 0, // Flatten perspective
-            opacity: engineVisibility,
-            scaleY: engineExpanded,
-            titleState0: 'SYSTEM STANDBY',
-            titleState1: 'ENGINE DIAGNOSTICS',
-            titleProgress: engineExpanded,
-            values: {
-                fps: statsFps,
-                drawCalls: renderer.info.render.calls,
-                triangles: renderer.info.render.triangles,
-                heat: dissectionProgress * 100,
-                discharge: dischargeActive ? 1 : 0,
-                coreColor: slices.length > 0 ? '#' + slices[0].userData.materials.solid.emissive.getHexString().toUpperCase() : '#000000'
-            }
-        });
+            panelManager.update('engine-diagnostics', {
+                x: engineX,
+                y: engineY,
+                z: 0,
+                rotationY: 0,
+                opacity: engineVisibility,
+                scaleY: engineExpanded,
+                titleState0: 'SYSTEM STANDBY',
+                titleState1: 'ENGINE DIAGNOSTICS',
+                titleProgress: engineExpanded,
+                values: {
+                    fps: statsFps,
+                    drawCalls: renderer.info.render.calls,
+                    triangles: renderer.info.render.triangles,
+                    heat: dissectionProgress * 100,
+                    discharge: dischargeActive ? 1 : 0,
+                    coreColor: slices.length > 0 ? '#' + slices[0].userData.materials.solid.emissive.getHexString().toUpperCase() : '#000000'
+                }
+            });
+        }
     };
 
 	// Set autoReset to false so we can accumulate draw calls across all EffectComposer passes
@@ -1583,13 +1628,7 @@ export function setupHeartScene(): LoopController | null {
 			inkPass.dispose?.();
 			composer.dispose();
 
-			arcOsc?.stop();
-			inkOsc?.stop();
-			arcOsc?.disconnect();
-			arcGain?.disconnect();
-			inkOsc?.disconnect();
-			inkGain?.disconnect();
-			audioCtx?.close();
+			heartSynth?.destroy();
 
 			renderer.dispose();
 		},

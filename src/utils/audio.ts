@@ -550,27 +550,27 @@ export function initHeartSynth() {
 		destroy: () => {}
 	};
 
-	// --- Arc buzz (continuous, gain-modulated) ---
+	// --- Electric Discharge Hum (continuous, gain-modulated) ---
 	const arcOsc = ctx.createOscillator();
 	const arcGain = ctx.createGain();
 	const arcFilter = ctx.createBiquadFilter();
 
-	arcOsc.type = 'square';
-	arcOsc.frequency.value = 220;
-	arcFilter.type = 'bandpass';
-	arcFilter.frequency.value = 1800;
+	arcOsc.type = 'sawtooth';
+	arcOsc.frequency.value = 55; // 55Hz deep transformer hum
+	arcFilter.type = 'lowpass';
+	arcFilter.frequency.value = 150;
 	arcGain.gain.value = 0;
 
 	arcOsc.connect(arcFilter);
 	arcFilter.connect(arcGain);
 	arcGain.connect(masterGain);
 
-	// --- Ink sub (continuous, gain-modulated) ---
+	// --- Dissection Slide Sub-bass (continuous, gain-modulated) ---
 	const inkOsc = ctx.createOscillator();
 	const inkGain = ctx.createGain();
 
 	inkOsc.type = 'sine';
-	inkOsc.frequency.value = 70;
+	inkOsc.frequency.value = 40; // Deep sub-bass pressure
 	inkGain.gain.value = 0;
 
 	inkOsc.connect(inkGain);
