@@ -10,9 +10,36 @@
 
     <!-- DOM UI Layer (DOM over Canvas) -->
     <div class="dom-overlay">
+        <div id="id-frost" class="id-frost" data-no-matrix></div>
+
+        <div id="id-card" class="id-card" data-no-matrix>
+            <button id="id-toggle" class="id-face" aria-label="Open ID Card" aria-expanded="false">ID_CARD</button>
+            <div class="id-body">
+                <div class="id-header">
+                    <span>ID // OPERATOR</span>
+                    <button id="id-close" class="id-close" aria-label="Close ID Card">[X]</button>
+                </div>
+                <div class="id-main">
+                    <div class="id-photo"><img src="/id/operator.jpg" alt="Operator Photo" /></div>
+                    <div class="id-data">
+                        <div class="id-row"><span class="id-label">NAME</span><span class="id-value">YASH BHARDWAJ</span></div>
+                        <div class="id-row"><span class="id-label">CLASS</span><span class="id-value">CREATIVE TECHNOLOGIST</span></div>
+                        <div class="id-row"><span class="id-label">HANDLE</span><span class="id-value">claw-h</span></div>
+                        <div class="id-row"><span class="id-label">STATUS</span><span class="id-value id-status">ONLINE</span></div>
+                    </div>
+                </div>
+                <div class="id-barcode"></div>
+                <div class="id-actions">
+                    <a href="mailto:yash.bhardwaj@example.com" class="id-action-btn">[ INITIATE HANDSHAKE ]</a>
+                    <a href="https://github.com/claw-h" target="_blank" rel="noopener" class="id-action-btn">[ ACCESS GITHUB ]</a>
+                </div>
+            </div>
+        </div>
+
         <button id="archive-toggle" class="archive-btn" aria-label="Open Archive">ARCHIVE</button>
 
-        <div id="archive-modal" class="archive-modal hidden">
+
+        <div id="archive-modal" class="archive-modal hidden" data-lenis-prevent="true">
             <!-- Modal Background: We will attach the shader here if needed or just use brutalist CSS -->
             <div class="archive-modal-bg"></div>
             
@@ -34,7 +61,7 @@
                             <div class="category-inner">
                                 <div class="project-list">
                                     
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=1">
+                                    <div class="project-item" data-image="/blueprints/fuzzy-nav.png">
                                         <button class="project-header" aria-expanded="false">
                                             <div class="col-year">2026</div>
                                             <div class="col-title">fuzzy-nav</div>
@@ -43,14 +70,14 @@
                                         </button>
                                         <div class="project-details">
                                             <div class="project-details-inner">
-                                                <div class="project-meta"><span>Domain:</span> Terminal Tooling</div>
-                                                <p class="project-desc">A fuzzy finder replacing a bunch of zsh plugins. Lightweight, blazing fast navigation without the bloat of traditional setups.</p>
+                                                <div class="project-meta"><span>Domain:</span> Terminal Tooling // Core Nav</div>
+                                                <p class="project-desc">A blazingly fast fuzzy navigation utility designed to strip away the bloated overhead of traditional Zsh plugins. Engineered for sub-millisecond directory traversal and streamlined terminal workflows.</p>
                                                 <a href="https://github.com/claw-h/fuzzy-nav" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=2">
+                                    <div class="project-item" data-image="/blueprints/marketplace.png">
                                         <button class="project-header" aria-expanded="false">
                                             <div class="col-year">2026</div>
                                             <div class="col-title">marketplace</div>
@@ -59,16 +86,16 @@
                                         </button>
                                         <div class="project-details">
                                             <div class="project-details-inner">
-                                                <div class="project-meta"><span>Domain:</span> Web Application</div>
-                                                <p class="project-desc">Full-stack platform prototype built with modern headless e-commerce architecture.</p>
+                                                <div class="project-meta"><span>Domain:</span> Secure Platform Architecture</div>
+                                                <p class="project-desc">A highly secure, full-stack platform architecture built on Astro. Features a hardened, stateless OTP authentication pipeline, zero-trust session management, and a strictly typed Prisma ORM layer interacting with a PostgreSQL core. Engineered with strict CI/CD quality gates and production-ready security protocols.</p>
                                                 <a href="https://github.com/claw-h/marketplace" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
                                         </div>
                                     </div>
 
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=3">
+                                    <div class="project-item" data-image="/blueprints/schoolos.png">
                                         <button class="project-header" aria-expanded="false">
-                                            <div class="col-year">2026</div>
+                                            <div class="col-year">2025</div>
                                             <div class="col-title">schoolos</div>
                                             <div class="col-tech">TypeScript</div>
                                             <div class="col-icon">+</div>
@@ -82,9 +109,9 @@
                                         </div>
                                     </div>
 
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=4">
+                                    <div class="project-item" data-image="/blueprints/loveos.png">
                                         <button class="project-header" aria-expanded="false">
-                                            <div class="col-year">2026</div>
+                                            <div class="col-year">2025</div>
                                             <div class="col-title">loveOS (v2)</div>
                                             <div class="col-tech">React, TSX, Framer Motion</div>
                                             <div class="col-icon">+</div>
@@ -98,7 +125,7 @@
                                         </div>
                                     </div>
 
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=5">
+                                    <div class="project-item" data-image="/blueprints/night.png">
                                         <button class="project-header" aria-expanded="false">
                                             <div class="col-year">2021</div>
                                             <div class="col-title">night</div>
@@ -114,12 +141,28 @@
                                         </div>
                                     </div>
 
+                                    <div class="project-item" data-image="/blueprints/this-portfolio.png">
+                                        <button class="project-header" aria-expanded="false">
+                                            <div class="col-year">2026</div>
+                                            <div class="col-title">This Portfolio</div>
+                                            <div class="col-tech">Astro, WebGL, AI</div>
+                                            <div class="col-icon">+</div>
+                                        </button>
+                                        <div class="project-details">
+                                            <div class="project-details-inner">
+                                                <div class="project-meta"><span>Domain:</span> Performance / WebGL</div>
+                                                <p class="project-desc">it speaks for itself</p>
+                                                <a href="#" class="project-link" data-lens-target="archive">View Source ↗</a>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- CREATIVE SECTION -->
+                    <!-- CREATIVE SECTION (HMR FINAL) -->
                     <div class="category-section">
                         <button class="category-toggle" aria-expanded="false">
                             <span class="category-title">CREATIVE // STUDIO</span>
@@ -127,54 +170,7 @@
                         </button>
                         <div class="category-content">
                             <div class="category-inner">
-                                <div class="project-list">
-                                    
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=6">
-                                        <button class="project-header" aria-expanded="false">
-                                            <div class="col-year">2026</div>
-                                            <div class="col-title">Spatial UI Concepts</div>
-                                            <div class="col-tech">Astro, Three.js, GLSL</div>
-                                            <div class="col-icon">+</div>
-                                        </button>
-                                        <div class="project-details">
-                                            <div class="project-details-inner">
-                                                <div class="project-meta"><span>Domain:</span> Creative Technology</div>
-                                                <p class="project-desc">Interface-driven spatial UI concepts blending WebGL topography, brutalist aesthetics, and interactive cinematic mechanics.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=7">
-                                        <button class="project-header" aria-expanded="false">
-                                            <div class="col-year">2025</div>
-                                            <div class="col-title">Technical Vector Diagrams</div>
-                                            <div class="col-tech">Vector Illustration</div>
-                                            <div class="col-icon">+</div>
-                                        </button>
-                                        <div class="project-details">
-                                            <div class="project-details-inner">
-                                                <div class="project-meta"><span>Domain:</span> Visual Art</div>
-                                                <p class="project-desc">Highly detailed isometric and orthographic vector illustrations for architectural and technical design studies.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="project-item" data-image="https://picsum.photos/1000/750?random=8">
-                                        <button class="project-header" aria-expanded="false">
-                                            <div class="col-year">2024</div>
-                                            <div class="col-title">Electronic Jazzy Rap EP</div>
-                                            <div class="col-tech">Composition, Mixing</div>
-                                            <div class="col-icon">+</div>
-                                        </button>
-                                        <div class="project-details">
-                                            <div class="project-details-inner">
-                                                <div class="project-meta"><span>Domain:</span> Audio Production</div>
-                                                <p class="project-desc">A conceptual 4-track EP merging synthetic soundscapes with organic jazz instrumentation and lyrical cadence.</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                </div>
+                                <div id="creative-grid" class="creative-grid"></div>
                             </div>
                         </div>
                     </div>
@@ -291,17 +287,279 @@
             0 4px 8px rgba(0, 0, 0, 0.6);
     }
 
-    /* ─── Transparent Reveal Modal ─── */
-    .archive-modal {
+    /* ─── ID CARD: button that expands into a mechanical card ─── */
+    .id-frost {
         position: absolute;
         inset: 0;
-        pointer-events: none; /* Let clicks pass through to WebGL until content is hovered */
+        z-index: 5;
+        background: rgba(4, 6, 10, 0.45);
+        backdrop-filter: blur(14px) saturate(1.2);
+        -webkit-backdrop-filter: blur(14px) saturate(1.2);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.5s ease;
+    }
+    .id-frost.is-active {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .id-card {
+        /* Geometry: sits 1rem left of ARCHIVE (160px wide, 3rem from right).
+           --cx = distance from viewport right edge to the button's center.
+           Both states use right = --cx - width/2, so the center never moves
+           and the bottom edge never moves: it grows up + out to both sides. */
+        --closed-w: 160px;
+        --closed-h: 52px;
+        --open-w: 520px;
+        --open-h: 420px;
+        --cx: calc(3rem + 160px + 1rem + var(--closed-w) / 2);
+
+        position: absolute;
+        right: calc(var(--cx) - var(--closed-w) / 2);
+        bottom: 3rem;
+        width: var(--closed-w);
+        height: var(--closed-h);
+        pointer-events: auto;
+        z-index: 60;
+        overflow: hidden;
+
+        background: #1a1c23;
+        border: 1px solid #080a0c;
+        border-radius: 6px;
+        box-shadow:
+            inset 0 2px 2px rgba(255, 255, 255, 0.1),
+            inset 0 -4px 4px rgba(0, 0, 0, 0.6),
+            0 8px 12px rgba(0, 0, 0, 0.8),
+            0 15px 25px rgba(0, 0, 0, 0.6);
+
+        transition:
+            right 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+            width 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+            height 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+            border-radius 0.6s ease,
+            border-color 0.3s ease;
+    }
+
+    .id-card.is-open {
+        right: calc(var(--cx) - var(--open-w) / 2);
+        width: var(--open-w);
+        height: min(var(--open-h), calc(100% - 6rem));
+        border-radius: 10px;
+        border-color: rgba(255, 51, 51, 0.5);
+    }
+
+    /* The closed-state button face (same look as ARCHIVE) */
+    .id-face {
+        position: absolute;
+        inset: 0;
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 2rem;
+        gap: 12px;
+        background: transparent;
+        border: none;
+        color: #b0bac9;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        cursor: pointer;
+        transition: opacity 0.25s ease, color 0.2s ease;
+    }
+    .id-face:hover { color: #fff; }
+    .id-face::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #4a1f1f;
+        box-shadow: inset 0 2px 4px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.1);
+    }
+    .id-card.is-open .id-face {
+        opacity: 0;
+        pointer-events: none;
+    }
+
+    /* The card contents: fixed layout, fades in once the shell is mostly open */
+    .id-body {
+        position: absolute;
+        inset: 0;
+        padding: 1.75rem 2rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+        color: #b0bac9;
+        font-family: 'IBM Plex Mono', monospace;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+    }
+    .id-card.is-open .id-body {
+        opacity: 1;
+        pointer-events: auto;
+        transition: opacity 0.4s ease 0.35s;
+    }
+
+    /* Lanyard slot + hazard strip */
+    .id-body::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        width: 56px;
+        height: 8px;
+        transform: translateX(-50%);
+        border-radius: 4px;
+        background: #040507;
+        box-shadow: inset 0 2px 3px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.08);
+    }
+    .id-body::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 5px;
+        background: repeating-linear-gradient(
+            45deg,
+            rgba(0,0,0,0.8), rgba(0,0,0,0.8) 6px,
+            rgba(255,170,0,0.6) 6px, rgba(255,170,0,0.6) 12px
+        );
+        opacity: 0.6;
+    }
+
+    .id-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 0.5rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        font-size: 0.7rem;
+        letter-spacing: 0.25em;
+        color: #72849c;
+    }
+    .id-close {
+        background: none;
+        border: none;
+        color: #72849c;
+        font-family: inherit;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: color 0.2s;
+    }
+    .id-close:hover { color: #ff3333; }
+
+    .id-main {
+        display: flex;
+        gap: 1.5rem;
+        flex: 1;
+        min-height: 0;
+    }
+    .id-photo {
+        flex: none;
+        width: 140px;
+        height: 180px;
+        position: relative;
+        overflow: hidden;
+        background: #040507;
+        border: 1px solid #000;
+        box-shadow: inset 0 0 20px rgba(0,0,0,0.9), 0 0 0 1px rgba(143,220,255,0.12);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(143,220,255,0.25);
+        font-size: 0.6rem;
+        letter-spacing: 0.2em;
+    }
+    .id-photo img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        position: relative;
+        z-index: 1;
+        filter: grayscale(80%) sepia(20%) hue-rotate(180deg) contrast(1.1) brightness(0.9);
+        mix-blend-mode: hard-light;
+        opacity: 0.85;
+    }
+    .id-photo::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+            0deg, rgba(255,255,255,0.03), rgba(255,255,255,0.03) 1px, transparent 1px, transparent 3px
+        );
+    }
+    .id-data {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        min-width: 0;
+    }
+    .id-row { display: flex; flex-direction: column; gap: 2px; }
+    .id-label { font-size: 0.55rem; letter-spacing: 0.2em; color: #72849c; }
+    .id-value { font-size: 0.9rem; font-weight: 600; color: #fff; }
+    .id-value.id-status {
+        color: #ff3333;
+        text-shadow: 0 0 8px rgba(255,51,51,0.4);
+    }
+
+    .id-barcode {
+        height: 26px;
+        opacity: 0.55;
+        background: repeating-linear-gradient(
+            90deg,
+            #b0bac9 0 2px, transparent 2px 4px,
+            #b0bac9 4px 5px, transparent 5px 9px,
+            #b0bac9 9px 12px, transparent 12px 14px
+        );
+    }
+    .id-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; padding-bottom: 0.5rem; }
+    .id-action-btn {
+        flex: 1;
+        min-width: 140px;
+        text-align: center;
+        padding: 0.7rem 0.5rem;
+        background: #1a1c23;
+        border: 1px solid #080a0c;
+        border-radius: 4px;
+        box-shadow: inset 0 1px 1px rgba(255,255,255,0.08), inset 0 -2px 2px rgba(0,0,0,0.6);
+        color: #b0bac9;
+        font-size: 0.65rem;
+        letter-spacing: 0.15em;
+        text-decoration: none;
+        transition: color 0.2s, transform 0.1s;
+    }
+    .id-action-btn:hover { color: #ffaa00; }
+    .id-action-btn:active { transform: translateY(2px); }
+
+    /* ─── Transparent Reveal Modal ─── */
+    .archive-modal {
+        will-change: opacity, visibility;
+        transform: translateZ(0);
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        display: flex;
+        align-items: flex-start; /* Changed from center to prevent top clipping */
+        justify-content: center;
+        padding: 4rem 2rem; /* Added more top/bottom padding for scroll space */
         transition: opacity 0.4s ease, visibility 0.4s ease;
         z-index: 20;
+        overflow-y: auto;
+        -ms-overflow-style: none;  /* IE and Edge */
+        scrollbar-width: none;  /* Firefox */
+    }
+    .archive-modal::-webkit-scrollbar {
+        display: none;
+    }
+
+    
+    .archive-modal:not(.hidden) {
+        pointer-events: auto;
     }
 
     .archive-modal.hidden {
@@ -309,76 +567,206 @@
         visibility: hidden;
     }
 
+    .archive-modal-bg { /* transparent */ }
+
     .archive-content {
+        margin: auto; /* Centers the content safely without top-clipping when overflowing */
+        will-change: transform, opacity;
+        transform-style: preserve-3d;
         position: relative;
         z-index: 2;
         width: 100%;
         max-width: 1000px;
-        color: #e0e0e0;
+        color: #b0bac9; 
         font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
-        padding: 3rem;
-        pointer-events: auto; /* Allow interacting with the table */
+        padding: 2rem;
+        pointer-events: auto;
         
-        /* Hidden State: Fast fade out, no delay */
-        transform: translateY(20px);
+        transform: translateY(30px) scale(0.98);
         opacity: 0;
-        transition: all 0.2s ease-out;
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
         transition-delay: 0s;
     }
     
     .archive-modal:not(.hidden) .archive-content {
-        /* Active State: Majestic slow fade in with delay */
-        transform: translateY(0);
+        transform: translateY(0) scale(1);
         opacity: 1;
-        transition: all 1.0s cubic-bezier(0.16, 1, 0.3, 1);
-        transition-delay: 0.5s; /* Wait for majestic WebGL ocean split */
+        transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+        transition-delay: 0.2s;
     }
 
+    /* Frosted glass when a technologist blueprint is active behind the modal */
+    .archive-content.blueprint-active {
+        background: rgba(4, 6, 10, 0.4);
+        backdrop-filter: blur(16px) saturate(1.3);
+        -webkit-backdrop-filter: blur(16px) saturate(1.3);
+        border: 1px solid rgba(143, 220, 255, 0.08);
+        border-radius: 8px;
+    }
+
+    .archive-content.blueprint-active .archive-header {
+        background: rgba(22, 24, 29, 0.4);
+    }
+
+    .archive-content.blueprint-active .category-section {
+        background: rgba(22, 24, 29, 0.25);
+    }
+
+    .archive-content.blueprint-active .project-item {
+        background: rgba(22, 24, 29, 0.15);
+    }
+
+    .archive-content.blueprint-active .project-item.is-expanded {
+        background: rgba(26, 28, 35, 0.35);
+    }
+
+    .archive-content.blueprint-active .project-details {
+        background: rgba(4, 5, 7, 0.3);
+    }
+
+    .archive-content.blueprint-active .project-header:hover {
+        background: rgba(255, 255, 255, 0.03);
+    }
+
+    /* Smooth transition for all affected children */
+    .archive-header,
+    .category-section,
+    .project-item,
+    .project-details {
+        transition: background 0.4s ease;
+    }
+
+    /* A physical mechanical header panel */
     .archive-header {
+        position: relative;
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 2rem;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-        padding-bottom: 1rem;
+        padding: 1.2rem 2.5rem; /* more padding for screws */
+        
+        background: rgba(22, 24, 29, 0.95);
+        border-radius: 6px;
+        border: 1px solid #000;
+        box-shadow: 
+            inset 0 2px 2px rgba(255, 255, 255, 0.08),
+            inset 0 -4px 4px rgba(0, 0, 0, 0.8),
+            inset 1px 0 2px rgba(255, 255, 255, 0.05),
+            inset -1px 0 2px rgba(0, 0, 0, 0.4),
+            0 12px 20px rgba(0, 0, 0, 0.8);
+        
     }
 
+    /* Hardware Screws */
+    .archive-header::before, .archive-header::after {
+        content: '+';
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 14px;
+        color: #3a4454;
+        font-weight: 800;
+        text-shadow: 0 1px 1px rgba(255,255,255,0.1), 0 -1px 1px rgba(0,0,0,0.8);
+    }
+    .archive-header::before { left: 14px; }
+    .archive-header::after { right: 14px; }
+
     .archive-title {
-        font-size: 1rem;
-        letter-spacing: 0.2em;
+        font-size: 0.95rem;
+        letter-spacing: 0.3em;
         margin: 0;
-        font-weight: 500;
-        color: #fff;
+        font-weight: 600;
+        color: #dbeeff;
         text-transform: uppercase;
+        text-shadow: 0 -1px 2px rgba(0,0,0,1);
+    }
+
+    /* Red indicator LED on the title */
+    .archive-title::before {
+        content: '';
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        margin-right: 14px;
+        border-radius: 50%;
+        background: #4a1f1f;
+        box-shadow: 
+            inset 0 1px 2px rgba(0,0,0,0.8),
+            0 1px 0 rgba(255,255,255,0.1);
+        vertical-align: middle;
+        transition: all 0.3s ease;
+    }
+    
+    .archive-modal:not(.hidden) .archive-title::before {
+        background: #ff3333;
+        box-shadow: 
+            inset 0 1px 2px rgba(255,255,255,0.6),
+            0 0 8px #ff3333,
+            0 0 16px #ff3333;
     }
 
     .archive-close {
-        background: transparent;
-        border: none;
-        color: #fff;
+        position: relative;
+        z-index: 2;
+        background: #0a0b0e;
+        border: 1px solid #000;
+        color: #ff4a4a;
         font-family: inherit;
-        font-size: 0.8rem;
-        letter-spacing: 0.1em;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.15em;
         cursor: pointer;
-        padding: 0.4rem 0.8rem;
-        transition: all 0.2s ease;
-        opacity: 0.5;
+        padding: 0.5rem 1rem;
+        border-radius: 4px;
+        box-shadow: 
+            inset 0 1px 1px rgba(255,255,255,0.1),
+            0 4px 6px rgba(0,0,0,0.6);
+        transition: all 0.1s;
     }
 
-    .archive-close:hover {
-        opacity: 1;
-        color: #ff4a4a;
+    .archive-close:active {
+        transform: translateY(4px);
+        box-shadow: 
+            inset 0 2px 4px rgba(0,0,0,0.8),
+            0 0 0 rgba(0,0,0,0);
     }
 
     /* ─── Nested Accordion Lists ─── */
     .archive-lists {
         display: flex;
         flex-direction: column;
-        gap: 1.5rem;
+        gap: 2rem;
     }
 
     .category-section {
-        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        position: relative;
+        background: rgba(22, 24, 29, 0.65);
+        border-radius: 6px;
+        border: 1px solid rgba(8, 10, 12, 0.9);
+        box-shadow: 
+            inset 0 2px 2px rgba(255, 255, 255, 0.05),
+            inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+            0 12px 20px rgba(0, 0, 0, 0.5);
+        padding: 0.5rem;
+        
+        overflow: hidden;
+    }
+
+    /* Hazard strip */
+    .category-section::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 4px;
+        background: repeating-linear-gradient(
+            45deg,
+            rgba(0,0,0,0.8),
+            rgba(0,0,0,0.8) 6px,
+            rgba(255, 170, 0, 0.6) 6px,
+            rgba(255, 170, 0, 0.6) 12px
+        );
+        opacity: 0.5;
+        border-top: 1px solid #000;
     }
 
     .category-toggle {
@@ -388,18 +776,23 @@
         align-items: center;
         background: transparent;
         border: none;
-        color: #8fdcff;
+        color: #9ab0c7;
         font-family: inherit;
         font-size: 0.9rem;
         letter-spacing: 0.2em;
         font-weight: 600;
         cursor: pointer;
-        padding: 1rem 0;
-        transition: all 0.2s ease;
+        padding: 1.2rem;
+        text-shadow: 0 -1px 2px rgba(0,0,0,1);
+        transition: color 0.2s;
     }
-
-    .category-toggle:hover {
-        color: #fff;
+    
+    .category-toggle:hover { color: #fff; }
+    
+    .category-title {
+        display: inline-block;
+        min-width: 250px;
+        text-align: left;
     }
 
     .category-icon {
@@ -413,7 +806,7 @@
     .category-content {
         display: grid;
         grid-template-rows: 0fr;
-        transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: grid-template-rows 0.5s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .category-section.is-expanded .category-content {
         grid-template-rows: 1fr;
@@ -426,15 +819,49 @@
     .project-list {
         display: flex;
         flex-direction: column;
-        padding-bottom: 1.5rem;
+        padding: 0 0.5rem 1rem;
+        gap: 6px;
     }
 
+    /* Mechanical slotted items with transparency */
     .project-item {
-        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(22, 24, 29, 0.2);
+        border-radius: 4px;
+        border: 1px solid rgba(17, 17, 17, 0.8);
+        box-shadow: inset 0 1px 1px rgba(255,255,255,0.03);
+        transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        
+        /* Boot animation initial state */
+        opacity: 0;
+        transform: translateY(-10px) scale(0.98);
+    }
+    
+    .archive-modal:not(.hidden) .project-item {
+        animation: slot-boot 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    
+    .archive-modal:not(.hidden) .project-item:nth-child(1) { animation-delay: 0.6s; }
+    .archive-modal:not(.hidden) .project-item:nth-child(2) { animation-delay: 0.7s; }
+    .archive-modal:not(.hidden) .project-item:nth-child(3) { animation-delay: 0.8s; }
+    .archive-modal:not(.hidden) .project-item:nth-child(4) { animation-delay: 0.9s; }
+    .archive-modal:not(.hidden) .project-item:nth-child(5) { animation-delay: 1.0s; }
+    .archive-modal:not(.hidden) .project-item:nth-child(6) { animation-delay: 1.1s; }
+    .archive-modal:not(.hidden) .project-item:nth-child(7) { animation-delay: 1.2s; }
+
+    @keyframes slot-boot {
+        0% { opacity: 0; transform: translateY(-10px) scale(0.98); }
+        100% { opacity: 1; transform: translateY(0) scale(1); }
     }
 
-    .project-item:first-child {
-        border-top: none;
+    .project-item.is-expanded {
+        background: rgba(26, 28, 35, 0.85);
+        border-color: #ff3333;
+        box-shadow: 
+            inset 0 1px 1px rgba(255, 51, 51, 0.15),
+            inset 4px 0 0 #ff3333,
+            0 8px 16px rgba(0,0,0,0.5);
+        transform: scale(1.01);
+        z-index: 2;
     }
 
     .project-header {
@@ -446,81 +873,153 @@
         color: inherit;
         font-family: inherit;
         font-size: 0.85rem;
-        padding: 1.25rem 0.5rem;
+        padding: 1.2rem;
         cursor: pointer;
-        transition: background 0.2s ease;
         text-align: left;
+        transition: background 0.2s;
     }
 
     .project-header:hover {
-        background: rgba(255, 255, 255, 0.03);
+        background: rgba(255, 255, 255, 0.04);
     }
 
-    .col-year { width: 10%; color: rgba(255,255,255,0.4); }
-    .col-title { width: 30%; font-weight: 500; color: #fff; }
+    .col-year { width: 10%; color: rgba(255,255,255,0.3); font-weight: 600; }
+    .col-title { 
+        width: 30%; 
+        font-weight: 600; 
+        color: #dbeeff; 
+        text-shadow: 0 -1px 1px rgba(0,0,0,0.8);
+        transition: color 0.3s;
+    }
+    
+    .project-item.is-expanded .col-title {
+        color: #ffaa00; /* Amber active text */
+        text-shadow: 0 0 8px rgba(255,170,0,0.4);
+    }
+    
     .col-tech { width: 55%; color: rgba(255,255,255,0.3); }
-    .col-icon { width: 5%; text-align: right; font-family: monospace; color: #8fdcff; display: inline-block; transition: transform 0.3s ease; }
+    .col-icon {
+        width: 5%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-family: monospace;
+        font-size: 1.1rem;
+        color: #72849c;
+        transform-origin: center center;
+        transition: transform 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55), color 0.3s ease;
+    }
 
-    /* Project Details Accordion Animation */
+    /* CRT Terminal Screen for Details */
     .project-details {
+        position: relative;
         display: grid;
         grid-template-rows: 0fr;
-        transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        background: rgba(0, 0, 0, 0.2);
+        transition: grid-template-rows 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        
+        background: #040507;
+        border-top: 1px solid #000;
+        box-shadow: inset 0 6px 16px rgba(0,0,0,1);
+    }
+    
+    .project-details::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: repeating-linear-gradient(
+            0deg,
+            rgba(255, 255, 255, 0.015),
+            rgba(255, 255, 255, 0.015) 1px,
+            transparent 1px,
+            transparent 3px
+        );
+        z-index: 1;
+        opacity: 0;
+        transition: opacity 0.4s;
     }
     
     .project-item.is-expanded .project-details {
         grid-template-rows: 1fr;
     }
     
+    .project-item.is-expanded .project-details::before {
+        opacity: 1;
+        animation: crt-flicker 0.15s forwards;
+    }
+    
+    @keyframes crt-flicker {
+        0% { opacity: 0; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    
     .project-item.is-expanded .col-icon {
-        transform: rotate(45deg); /* Turns + into x */
+        transform: rotate(45deg);
+        color: #ff3333;
     }
 
     .project-details-inner {
         overflow: hidden;
-        padding: 0 0.5rem;
+        padding: 0 2rem;
+        position: relative;
+        z-index: 2;
     }
 
-    /* Project Content Styling */
+    /* Terminal Phosphor Text Styling */
     .project-meta {
         font-size: 0.75rem;
-        color: #8fdcff;
-        margin-top: 1rem;
+        color: #5c85ff;
+        margin-top: 1.8rem;
         margin-bottom: 0.5rem;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        font-weight: 600;
+        text-shadow: 0 0 6px rgba(92,133,255,0.4);
     }
     
     .project-meta span {
-        color: rgba(255,255,255,0.4);
+        color: #3b5a99;
     }
 
     .project-desc {
         font-size: 0.85rem;
-        line-height: 1.6;
-        color: rgba(255,255,255,0.7);
+        line-height: 1.7;
+        color: #a3c2ff;
         margin: 0 0 1.5rem 0;
         max-width: 800px;
+        letter-spacing: -0.2px;
     }
 
+    /* Mechanical Tactical Button for Links */
     .project-link {
         display: inline-block;
         font-size: 0.75rem;
-        color: #1a1c23;
-        background: #8fdcff;
-        padding: 0.4rem 1rem;
+        color: #b0bac9;
+        background: #1a1c23;
+        padding: 0.6rem 1.4rem;
         text-decoration: none;
-        border-radius: 2px;
+        border-radius: 4px;
         font-weight: 600;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.15em;
         text-transform: uppercase;
-        margin-bottom: 1.5rem;
-        transition: all 0.2s ease;
+        margin-bottom: 2rem;
+        border: 1px solid #000;
+        box-shadow: 
+            inset 0 1px 1px rgba(255, 255, 255, 0.1),
+            inset 0 -2px 2px rgba(0, 0, 0, 0.4),
+            0 4px 6px rgba(0,0,0,0.5);
+        transition: all 0.1s;
+        text-shadow: 0 -1px 1px rgba(0,0,0,0.8);
     }
 
-    .project-link:hover {
-        background: #fff;
-        transform: translateY(-2px);
+    .project-link:active {
+        transform: translateY(3px);
+        box-shadow: 
+            inset 0 1px 1px rgba(255, 255, 255, 0.05),
+            inset 0 2px 4px rgba(0,0,0,0.8),
+            0 0 0 rgba(0,0,0,0);
+        color: #ffaa00;
     }
 
     @media (max-width: 768px) {
@@ -531,32 +1030,190 @@
             height: 48px;
             font-size: 0.7rem;
         }
-        .archive-content {
-            padding: 1.5rem;
+        .id-card {
+            --closed-w: 140px;
+            --closed-h: 48px;
+            --open-w: min(360px, calc(100vw - 2rem));
+            --open-h: 460px;
+            --cx: calc(1.5rem + 140px + 0.75rem + var(--closed-w) / 2);
+            bottom: 1.5rem;
         }
-        .project-header {
-            flex-wrap: wrap;
+        .id-card.is-open {
+            /* Clamp so a wide card can't push past either screen edge */
+            right: clamp(1rem, calc(var(--cx) - var(--open-w) / 2), calc(100vw - 1rem - var(--open-w)));
+            height: min(var(--open-h), calc(100% - 3rem));
         }
+        .id-face { font-size: 0.7rem; }
+        .id-body { padding: 1.25rem; }
+        .id-photo { width: 84px; height: 108px; }
+        .archive-content { padding: 1.5rem; }
+        .project-header { flex-wrap: wrap; }
         .col-year { width: 100%; margin-bottom: 0.5rem; }
         .col-title { width: 90%; }
         .col-icon { width: 10%; }
         .col-tech { width: 100%; margin-top: 0.5rem; }
     }
+
+
+
+
+
+    
+
+
+    
+
+
+</style>
+
+<!-- Global on purpose: gallery tiles are created at runtime by JS, so Astro's
+     scoped-style attribute is never applied to them. -->
+<style is:global>
+    /* ─── Creative gallery: justified rows ───
+       Each tile's flex-basis AND flex-grow are proportional to its aspect
+       ratio (--ar), so every tile in a row ends up the same height and the
+       row fills the full width. The tile has the image's exact aspect ratio,
+       so object-fit: cover never actually crops anything. */
+    .creative-grid {
+        --row-h: 300px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        width: 100%;
+        padding: 10px;
+        box-sizing: border-box;
+    }
+
+    /* Keeps a short last row from stretching to full width */
+    .creative-grid::after {
+        content: '';
+        flex-grow: 1000;
+    }
+
+    .creative-item {
+        --ar: 1;
+        position: relative;
+        flex: calc(var(--ar) * 100) 1 calc(var(--ar) * var(--row-h));
+        aspect-ratio: var(--ar);
+        min-width: 0;
+        overflow: hidden;
+        background: #020304;
+        cursor: pointer;
+    }
+
+    .creative-item img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Amber frame overlay (not a border, so it can't skew the ratios) */
+    .creative-item::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 0 1px rgba(143, 220, 255, 0.12);
+        transition: box-shadow 0.2s ease;
+    }
+
+    .creative-item:hover img {
+        transform: scale(1.04);
+    }
+
+    .creative-item:hover::after {
+        box-shadow: inset 0 0 0 2px rgba(255, 170, 0, 0.9);
+    }
+
+    @media (max-width: 600px) {
+        .creative-grid { --row-h: 180px; }
+    }
+
 </style>
 
 <script>
     import { setHoverTarget } from '../utils/hoverTargets';
-    import { playClack, playRumble, playBlip } from '../utils/audio';
+    import { playClack, playRumble, playBlip, playScramble, playDataPing } from '../utils/audio';
 
     const toggleBtn = document.getElementById('archive-toggle');
     const closeBtn = document.getElementById('archive-close');
     const modal = document.getElementById('archive-modal');
     
     let isOpen = false;
+    
+    // Scramble logic
+    const scrambleChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$*';
+    function runScramble(element, finalString, duration = 600) {
+        let start = null;
+        const step = (timestamp) => {
+            if (!start) start = timestamp;
+            const progress = Math.min((timestamp - start) / duration, 1);
+            let result = '';
+            for (let i = 0; i < finalString.length; i++) {
+                if (finalString[i] === ' ' || finalString[i] === '-') {
+                    result += finalString[i];
+                } else if (Math.random() < progress) {
+                    result += finalString[i];
+                } else {
+                    result += scrambleChars[Math.floor(Math.random() * scrambleChars.length)];
+                }
+            }
+            element.innerText = result;
+            if (progress < 1) requestAnimationFrame(step);
+            else element.innerText = finalString; 
+        };
+        requestAnimationFrame(step);
+    }
 
     if (toggleBtn && closeBtn && modal) {
+        document.querySelector('.dossier-wrapper')?.addEventListener('click', () => playScramble());
+
+        // ─── ID CARD ───
+        const idCard = document.getElementById('id-card');
+        const idFace = document.getElementById('id-toggle');
+        const idCloseBtn = document.getElementById('id-close');
+        const idFrost = document.getElementById('id-frost');
+        let isIdOpen = false;
+
+        const openId = () => {
+            if (!idCard || isIdOpen) return;
+            if (isOpen) closeArchive();
+            isIdOpen = true;
+            idCard.classList.add('is-open');
+            idFace?.setAttribute('aria-expanded', 'true');
+            idFrost?.classList.add('is-active');
+            setHoverTarget('idcard', true);
+            playClack();
+            playDataPing();
+        };
+
+        const closeId = () => {
+            if (!idCard || !isIdOpen) return;
+            isIdOpen = false;
+            idCard.classList.remove('is-open');
+            idFace?.setAttribute('aria-expanded', 'false');
+            idFrost?.classList.remove('is-active');
+            if (!idCard.matches(':hover')) setHoverTarget('idcard', false);
+            playClack();
+        };
+
+        // Lens cursor: on while hovering the button, and for the whole time the card is open
+        idCard?.addEventListener('mouseenter', () => setHoverTarget('idcard', true));
+        idCard?.addEventListener('mouseleave', () => {
+            if (!isIdOpen) setHoverTarget('idcard', false);
+        });
+
+        idFace?.addEventListener('click', openId);
+        idCloseBtn?.addEventListener('click', closeId);
+        idFrost?.addEventListener('click', closeId);
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeId();
+        });
         
         const openArchive = () => {
+            closeId();
             isOpen = true;
             playClack();
             playRumble(2.5);
@@ -564,6 +1221,18 @@
             toggleBtn.classList.add('is-active');
             window.dispatchEvent(new CustomEvent('toggle-archive', { detail: { open: true } }));
             setHoverTarget('archive', true);
+            
+            // Trigger scramble on titles with slight delays
+            setTimeout(() => {
+                document.querySelectorAll('.col-title').forEach((el, index) => {
+                    const finalStr = el.getAttribute('data-original') || el.innerText;
+                    if (!el.hasAttribute('data-original')) el.setAttribute('data-original', finalStr);
+                    setTimeout(() => {
+                        runScramble(el, finalStr, 500);
+                        playScramble(0.5);
+                    }, index * 100);
+                });
+            }, 600); // Wait for boot animation delay
         };
         
         const closeArchive = () => {
@@ -574,14 +1243,20 @@
             toggleBtn.classList.remove('is-active');
             window.dispatchEvent(new CustomEvent('toggle-archive', { detail: { open: false } }));
             setHoverTarget('archive', false);
+            
+            // Auto-collapse open items when closed
+            setTimeout(() => {
+                document.querySelectorAll('.project-item.is-expanded').forEach(item => {
+                    item.classList.remove('is-expanded');
+                    const btn = item.querySelector('.project-header');
+                    if (btn) btn.setAttribute('aria-expanded', 'false');
+                });
+            }, 400);
         };
 
         toggleBtn.addEventListener('click', () => {
-            if (isOpen) {
-                closeArchive();
-            } else {
-                openArchive();
-            }
+            if (isOpen) closeArchive();
+            else openArchive();
         });
         
         toggleBtn.addEventListener('mouseenter', () => setHoverTarget('archive', true));
@@ -602,15 +1277,34 @@
                 btn.setAttribute('aria-expanded', String(!isExpanded));
                 const icon = btn.querySelector('.category-icon');
                 if (icon) icon.textContent = isExpanded ? '+' : '-';
+                
+                // If closing the section, clear any active blueprint from the background
+                if (isExpanded) {
+                    window.dispatchEvent(new CustomEvent('project-hover', { detail: { url: null } }));
+                    const archiveContent = document.querySelector('.archive-content');
+                    if (archiveContent) archiveContent.classList.remove('blueprint-active');
+                }
+                
+                // Scramble category title on click
+                const titleEl = btn.querySelector('.category-title');
+                if (titleEl) {
+                    const finalStr = titleEl.getAttribute('data-original') || titleEl.innerText;
+                    if (!titleEl.hasAttribute('data-original')) titleEl.setAttribute('data-original', finalStr);
+                    runScramble(titleEl, finalStr, 300);
+                }
             });
         });
 
-        // Project Image Previews
+        // Project Image Previews (hover – non-technologist items only)
         document.querySelectorAll('.project-item').forEach(item => {
+            const section = item.closest('.category-section');
+            const isTechnologist = section && section.querySelector('.category-title')?.textContent.includes('TECHNOLOGIST');
+            if (isTechnologist) return; // handled by accordion click below
+
             item.addEventListener('mouseenter', () => {
                 const url = item.getAttribute('data-image');
                 if (url && isOpen) {
-                    window.dispatchEvent(new CustomEvent('project-hover', { detail: { url } }));
+                    window.dispatchEvent(new CustomEvent('project-hover', { detail: { url, noEffects: false } }));
                 }
             });
             item.addEventListener('mouseleave', () => {
@@ -618,10 +1312,63 @@
             });
         });
 
+        
+        // 11 pieces available, 10 shown. `ar` = width / height of the artwork.
+        const creativeArt = [
+            { src: 'art-01.jpg', ar: 1000 / 1500 },
+            { src: 'art-02.jpg', ar: 896 / 1200 },
+            { src: 'art-03.jpg', ar: 3840 / 2560 },
+            { src: 'art-04.jpg', ar: 2942 / 4160 },
+            { src: 'art-05.jpg', ar: 2942 / 4160 },
+            { src: 'art-06.jpg', ar: 4160 / 2942 },
+            { src: 'art-07.jpg', ar: 2942 / 4160 },
+            { src: 'art-08.jpg', ar: 2942 / 4160 },
+            { src: 'art-09.jpg', ar: 2160 / 1440 },
+            { src: 'art-10.jpg', ar: 2160 / 3840 },
+            { src: 'art-11.jpg', ar: 2160 / 3840 }
+        ];
+
+        const initCreativeGrid = () => {
+            const grid = document.getElementById('creative-grid');
+            if (!grid) return;
+            grid.innerHTML = '';
+
+            // Fisher-Yates shuffle, then keep 10
+            const pool = [...creativeArt];
+            for (let i = pool.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [pool[i], pool[j]] = [pool[j], pool[i]];
+            }
+
+            pool.slice(0, 10).forEach(({ src, ar }, idx) => {
+                const tile = document.createElement('div');
+                tile.className = 'creative-item';
+                tile.style.setProperty('--ar', ar.toFixed(4));
+
+                const img = document.createElement('img');
+                img.src = '/creative/thumbs/' + src;
+                img.alt = 'Artwork ' + (idx + 1);
+                img.loading = 'lazy';
+                img.decoding = 'async';
+                img.draggable = false;
+
+                tile.appendChild(img);
+                grid.appendChild(tile);
+            });
+        };
+        initCreativeGrid();
+
+        
+
+
+        
+        
+
         // Project Accordions
         document.querySelectorAll('.project-header').forEach(btn => {
             btn.addEventListener('click', () => {
-                playBlip();
+                playDataPing();
+                playClack(); // mechanical clack when slotting in
                 const item = btn.closest('.project-item');
                 if (!item) return;
                 const isExpanded = item.classList.contains('is-expanded');
@@ -636,11 +1383,37 @@
                             if (openBtn) openBtn.setAttribute('aria-expanded', 'false');
                         }
                     });
+                    // Clear any active blueprint before showing the new one
+                    window.dispatchEvent(new CustomEvent('project-hover', { detail: { url: null } }));
+                    const ac = document.querySelector('.archive-content');
+                    if (ac) ac.classList.remove('blueprint-active');
                 }
                 
                 item.classList.toggle('is-expanded', !isExpanded);
                 btn.setAttribute('aria-expanded', String(!isExpanded));
+
+                // Show/hide technologist blueprint on expand/collapse
+                const section = item.closest('.category-section');
+                const isTechnologist = section && section.querySelector('.category-title')?.textContent.includes('TECHNOLOGIST');
+                const archiveContent = document.querySelector('.archive-content');
+                if (isTechnologist) {
+                    if (!isExpanded) {
+                        // Just expanded – show this project's blueprint + frost the modal
+                        const url = item.getAttribute('data-image');
+                        if (url) {
+                            window.dispatchEvent(new CustomEvent('project-hover', { detail: { url, noEffects: true } }));
+                        }
+                        if (archiveContent) archiveContent.classList.add('blueprint-active');
+                    } else {
+                        // Just collapsed – clear the blueprint + remove frost
+                        window.dispatchEvent(new CustomEvent('project-hover', { detail: { url: null } }));
+                        if (archiveContent) archiveContent.classList.remove('blueprint-active');
+                    }
+                }
             });
         });
     }
+
+
+
 </script>

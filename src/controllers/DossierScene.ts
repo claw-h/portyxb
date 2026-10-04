@@ -22,18 +22,35 @@ function createAsciiAtlas() {
     return tex;
 }
 
+function clamp(val: number, min: number, max: number) {
+    return Math.min(Math.max(val, min), max);
+}
+function smoothstep(edge0: number, edge1: number, x: number): number {
+    const t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+}
+function calcScrollProgress(sectionTop: number, sectionHeight: number): number {
+    const vh = window.innerHeight;
+    const bottom = sectionTop + sectionHeight - window.scrollY;
+    return clamp(1 - bottom / (vh + sectionHeight), 0, 1);
+}
+
+export let setDossierScrollVelocity: ((v: number) => void) | undefined;
+export let setDossierScrollProgress: ((p: number) => void) | undefined;
+let _dossierScrollVelocity = 0;
+
 export async function setupDossierScene() {
+    setDossierScrollVelocity = (v) => { _dossierScrollVelocity = v; };
     const zone = document.querySelector('.dossier-zone');
     const canvas = document.getElementById('dossier-canvas') as HTMLCanvasElement | null;
     
     if (!zone || !canvas) return { destroy: () => {} };
 
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: false, antialias: true, powerPreference: 'high-performance' });
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     renderer.setSize(window.innerWidth, window.innerHeight);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x020305);
     
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 35;
@@ -46,11 +63,15 @@ export async function setupDossierScene() {
             tAtlas: { value: atlasTexture },
             tImage: { value: imageTexture },
             uTime: { value: 0 },
+            uNoEffects: { value: 0.0 },
+            uImageAspect: { value: 1.0 },
             uMorphProgress: { value: 1.0 },
             uColor: { value: new THREE.Color(0x82d6ff) },
             uMousePos: { value: new THREE.Vector3(9999, 9999, 0) },
             uRadius: { value: 12.0 },
-            uArchiveOpen: { value: 0.0 }
+            uArchiveOpen: { value: 0.0 },
+            uSingularity: { value: 0.0 },
+            uVelocity: { value: 0.0 }
         },
         vertexShader: `
             attribute vec2 aInstanceUv;
@@ -59,6 +80,8 @@ export async function setupDossierScene() {
             uniform float uMorphProgress;
             uniform float uTime;
             uniform float uArchiveOpen;
+            uniform float uSingularity;
+            uniform float uVelocity;
             
             varying vec2 vUv;
             varying float vBrightness;
@@ -84,6 +107,18 @@ export async function setupDossierScene() {
                 float zExtrusion = (activeBrightness * 3.0) - 1.5;
                 float explode = mix(n * 20.0 - 10.0, zExtrusion, smoothstep(0.0, 1.0, uMorphProgress));
                 transformed.z += explode;
+
+                // --- 3D VERTEX SHOCKWAVE ---
+                vec4 localCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                float distToCenter = length(localCenter.xy);
+                float waveRadius = uSingularity * 150.0;
+                float waveDist = abs(distToCenter - waveRadius);
+                
+                float shock = smoothstep(15.0, 0.0, waveDist) * smoothstep(0.9, 0.0, uSingularity);
+                transformed.z += shock * (30.0 + abs(uVelocity) * 0.1);
+                
+                vec2 dir = normalize(localCenter.xy + vec2(0.001));
+                transformed.xy += dir * shock * (10.0 + abs(uVelocity) * 0.05);
 
                 vec4 worldPos = modelMatrix * instanceMatrix * vec4(transformed, 1.0);
                 // Ocean-like Layered Split:
@@ -200,7 +235,9 @@ export async function setupDossierScene() {
             uMorphProgress: { value: 1.0 },
             uMousePos: { value: new THREE.Vector3(9999, 9999, 0) },
             uRadius: { value: 12.0 },
-            uArchiveOpen: { value: 0.0 }
+            uArchiveOpen: { value: 0.0 },
+            uSingularity: { value: 0.0 },
+            uVelocity: { value: 0.0 }
         },
         vertexShader: `
             varying vec2 vUv;
@@ -218,6 +255,7 @@ export async function setupDossierScene() {
             uniform vec3 uMousePos;
             uniform float uRadius;
             uniform float uArchiveOpen;
+            uniform float uSingularity;
             
             varying vec2 vUv;
             varying vec3 vWorldPos;
@@ -252,7 +290,9 @@ export async function setupDossierScene() {
             tPreview: { value: emptyTexture },
             uTime: { value: 0 },
             uHoverFade: { value: 0 },
-            uMousePos: { value: new THREE.Vector2(99, 99) }
+            uNoEffects: { value: 0.0 },
+            uMousePos: { value: new THREE.Vector2(99, 99) },
+            uImageAspect: { value: 1.0 }
         },
         vertexShader: `
             varying vec2 vUv;
@@ -269,16 +309,33 @@ export async function setupDossierScene() {
             uniform float uTime;
             uniform float uHoverFade;
             uniform vec2 uMousePos;
+            uniform float uNoEffects;
+            uniform float uImageAspect;
             
             varying vec2 vUv;
 
+            
             void main() {
                 vec2 uv = vUv;
                 
+                // Object-fit: contain logic to prevent stretching
+                float planeAspect = 50.0 / 35.0;
+                vec2 scale = vec2(1.0);
+                if (planeAspect > uImageAspect) {
+                    scale.x = planeAspect / uImageAspect;
+                } else {
+                    scale.y = uImageAspect / planeAspect;
+                }
+                uv = (uv - 0.5) * scale + 0.5;
+                
+                // Out of bounds check
+                float bounds = (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) ? 0.0 : 1.0;
+                
                 // Subtle liquid distortion based on time and mouse
+
                 float dist = distance(uv, uMousePos);
                 float wave = sin(dist * 15.0 - uTime * 2.0) * 0.02 * smoothstep(0.6, 0.0, dist);
-                uv += wave * uHoverFade;
+                uv += wave * uHoverFade * (1.0 - uNoEffects);
                 
                 // Chromatic Aberration
                 float caShift = 0.02 * uHoverFade * (1.0 + wave * 5.0);
@@ -306,9 +363,21 @@ export async function setupDossierScene() {
                 col *= vignette;
                 
                 // Slight color tint to match the site
+                
+                // Slight color tint to match the site
                 col *= vec3(0.8, 0.9, 1.0);
                 
-                gl_FragColor = vec4(col, uHoverFade * vignette);
+                // If uNoEffects is 1.0, bypass all effects
+                vec3 finalCol = mix(col, texG.rgb, uNoEffects);
+                float finalAlpha = mix(vignette, 1.0, uNoEffects);
+                
+                // Key out the dark background for blueprints
+                float lum = dot(texG.rgb, vec3(0.299, 0.587, 0.114));
+                float blueprintAlpha = smoothstep(0.04, 0.12, lum);
+                finalAlpha = mix(finalAlpha, finalAlpha * blueprintAlpha, uNoEffects);
+                
+                gl_FragColor = vec4(finalCol, uHoverFade * finalAlpha * bounds);
+
             }
         `,
         transparent: true,
@@ -353,7 +422,11 @@ export async function setupDossierScene() {
     };
 
     fetchNewImage();
-    const onClick = () => fetchNewImage();
+    const onClick = (e: MouseEvent) => {
+        // UI that shouldn't reshuffle the matrix (e.g. the ID card) opts out
+        if ((e.target as Element | null)?.closest?.('[data-no-matrix]')) return;
+        fetchNewImage();
+    };
     window.addEventListener('click', onClick);
 
     let targetRotX = 0;
@@ -392,16 +465,25 @@ export async function setupDossierScene() {
     textureLoader.setCrossOrigin('anonymous');
     const previewCache = new Map<string, THREE.Texture>();
     
+    let lastWasNoEffects = false;
     const onPreviewHover = ((e: CustomEvent) => {
         const url = e.detail.url;
+        
         if (url) {
             targetPreviewHover = 1.0;
+            const noEffects = e.detail.noEffects ? 1.0 : 0.0;
+            lastWasNoEffects = e.detail.noEffects;
+            previewMat.uniforms.uNoEffects.value = noEffects;
+            
             if (previewCache.has(url)) {
-                previewMat.uniforms.tPreview.value = previewCache.get(url);
+                const tex = previewCache.get(url);
+                previewMat.uniforms.tPreview.value = tex;
+                previewMat.uniforms.uImageAspect.value = tex.image ? tex.image.width / tex.image.height : 1.0;
             } else {
                 textureLoader.load(url, (tex) => {
                     previewCache.set(url, tex);
                     previewMat.uniforms.tPreview.value = tex;
+                    previewMat.uniforms.uImageAspect.value = tex.image ? tex.image.width / tex.image.height : 1.0;
                 });
             }
         } else {
@@ -412,6 +494,20 @@ export async function setupDossierScene() {
 
     const controller = createLoopController(zone, (time: number) => {
         const t = time * 0.001;
+        
+        const zoneTop = (zone as HTMLElement).offsetTop;
+        const zoneHeight = (zone as HTMLElement).offsetHeight;
+        const localScroll = calcScrollProgress(zoneTop, zoneHeight);
+        
+        // The singularity expands concurrently with the DreamCanvas fisheye shrinking
+        // DreamCanvas shrinks from 0.75 to 1.0, which perfectly aligns with Dossier's 0.25 to 0.50
+        const singularityProgress = smoothstep(0.25, 0.50, localScroll);
+        
+        shaderMat.uniforms.uSingularity.value = singularityProgress;
+        shaderMat.uniforms.uVelocity.value = _dossierScrollVelocity;
+        bgMat.uniforms.uSingularity.value = singularityProgress;
+        bgMat.uniforms.uVelocity.value = _dossierScrollVelocity;
+
         shaderMat.uniforms.uTime.value = t;
         previewMat.uniforms.uTime.value = t;
         
@@ -424,7 +520,8 @@ export async function setupDossierScene() {
         bgMat.uniforms.uArchiveOpen.value = shaderMat.uniforms.uArchiveOpen.value;
 
         // Preview fade and mouse uniforms
-        previewMat.uniforms.uHoverFade.value += (targetPreviewHover - previewMat.uniforms.uHoverFade.value) * 0.08;
+        const fadeSpeed = (targetPreviewHover === 0.0 && lastWasNoEffects) ? 0.3 : 0.08;
+        previewMat.uniforms.uHoverFade.value += (targetPreviewHover - previewMat.uniforms.uHoverFade.value) * fadeSpeed;
         previewMat.uniforms.uMousePos.value.lerp(new THREE.Vector2(mouse.x * 0.5 + 0.5, mouse.y * 0.5 + 0.5), 0.1);
 
         masterGroup.rotation.x += (targetRotX - masterGroup.rotation.x) * 0.05;

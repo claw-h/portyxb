@@ -381,33 +381,48 @@ export class InstrumentPanel {
         }, 30);
     }
 
+    private _lastTitleTransitionKey: string = '';
+    private _transitionNodes: { span0: HTMLElement, span1: HTMLElement, scanner: HTMLElement } | null = null;
+
     public setTitleTransition(state0: string, state1: string, progress: number) {
         if (!this.root) return;
         const el = this.root.querySelector('.panel__title') as HTMLElement;
         if (!el) return;
 
-        if (this._titleScrambleInterval !== null) {
-            clearInterval(this._titleScrambleInterval);
-            this._titleScrambleInterval = null;
-        }
+        const key = `${state0}|${state1}`;
+        const pct = (progress * 100).toFixed(1);
+        const scannerOpacity = (progress > 0.01 && progress < 0.99) ? 1 : 0;
 
-        // Only rebuild DOM if it's not already our transition container
-        if (!el.dataset.transitioning) {
+        if (this._lastTitleTransitionKey !== key || !el.dataset.transitioning) {
+            this._lastTitleTransitionKey = key;
+            if (this._titleScrambleInterval !== null) {
+                clearInterval(this._titleScrambleInterval);
+                this._titleScrambleInterval = null;
+            }
+
             el.dataset.transitioning = 'true';
             el.style.position = 'relative';
             el.style.display = 'inline-block';
             el.style.verticalAlign = 'top';
+
+            el.innerHTML = `
+                <span style="opacity: 0; pointer-events: none; white-space: pre;">${state1}</span>
+                <span data-span="0" style="position: absolute; left: 0; top: 0; white-space: pre; clip-path: inset(0 0 0 ${pct}%); color: rgba(255, 255, 255, 0.4);">${state0}</span>
+                <span data-span="1" style="position: absolute; left: 0; top: 0; white-space: pre; clip-path: inset(0 calc(100% - ${pct}%) 0 0);">${state1}</span>
+                <div data-scanner style="position: absolute; left: ${pct}%; top: -2px; bottom: -2px; width: 2px; background: #0ff; box-shadow: 0 0 6px #0ff; transform: translateX(-50%); opacity: ${scannerOpacity};"></div>
+            `;
+            
+            this._transitionNodes = {
+                span0: el.querySelector('[data-span="0"]') as HTMLElement,
+                span1: el.querySelector('[data-span="1"]') as HTMLElement,
+                scanner: el.querySelector('[data-scanner]') as HTMLElement
+            };
+        } else if (this._transitionNodes) {
+            this._transitionNodes.span0.style.clipPath = `inset(0 0 0 ${pct}%)`;
+            this._transitionNodes.span1.style.clipPath = `inset(0 calc(100% - ${pct}%) 0 0)`;
+            this._transitionNodes.scanner.style.left = `${pct}%`;
+            this._transitionNodes.scanner.style.opacity = String(scannerOpacity);
         }
-
-        const pct = (progress * 100).toFixed(1);
-        const scannerOpacity = (progress > 0.01 && progress < 0.99) ? 1 : 0;
-
-        el.innerHTML = `
-            <span style="opacity: 0; pointer-events: none; white-space: pre;">${state1}</span>
-            <span style="position: absolute; left: 0; top: 0; white-space: pre; clip-path: inset(0 0 0 ${pct}%); color: rgba(255, 255, 255, 0.4);">${state0}</span>
-            <span style="position: absolute; left: 0; top: 0; white-space: pre; clip-path: inset(0 calc(100% - ${pct}%) 0 0);">${state1}</span>
-            <div style="position: absolute; left: ${pct}%; top: -2px; bottom: -2px; width: 2px; background: #0ff; box-shadow: 0 0 6px #0ff; transform: translateX(-50%); opacity: ${scannerOpacity};"></div>
-        `;
     }
 
     public setEyebrow(eyebrow: string) {
@@ -448,8 +463,13 @@ export class InstrumentPanel {
      * Animates the detail section's height as a fraction of its natural height.
      * 0 = fully collapsed, 1 = fully expanded.
      */
+    private _lastScaleY: number = -1;
+
     public setDetailScale(scaleY: number) {
         if (!this.detailSection) return;
+        
+        if (this._lastScaleY === scaleY) return;
+        this._lastScaleY = scaleY;
 
         if (scaleY >= 0.99) {
             // Fully expanded — let content flow naturally and refresh the cache
@@ -510,7 +530,10 @@ export class InstrumentPanel {
                 if (ref.ledEl) ref.ledEl.classList.toggle('is-on', isOp);
             } else if (ref.type === 'text') {
                 const newText = String(raw);
-                if (ref.valueEl && ref.valueEl.textContent !== newText) ref.valueEl.textContent = newText;
+                if (ref.valueEl && ref.valueEl.dataset.raw !== newText) {
+                    ref.valueEl.innerHTML = newText;
+                    ref.valueEl.dataset.raw = newText;
+                }
             }
         });
     }

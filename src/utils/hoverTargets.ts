@@ -8,10 +8,10 @@
 // reference to the other's camera, canvas, or mesh list.
 // ---------------------------------------------------------------------------
 
-export type HoverTargetId = 'heart' | 'staircase' | 'archive';
+export type HoverTargetId = 'heart' | 'staircase' | 'archive' | 'idcard';
 
-const ALL_IDS: HoverTargetId[] = ['heart', 'staircase', 'archive'];
-const active: Record<HoverTargetId, boolean> = { heart: false, staircase: false, archive: false };
+const ALL_IDS: HoverTargetId[] = ['heart', 'staircase', 'archive', 'idcard'];
+const active: Record<HoverTargetId, boolean> = { heart: false, staircase: false, archive: false, idcard: false };
 
 type Listener = (target: HoverTargetId | null) => void;
 const listeners = new Set<Listener>();
