@@ -615,9 +615,9 @@ export function setArchiveMelodyActive(active: boolean) {
 		const scale = [130.81, 155.56, 174.61, 196.00, 233.08, 261.63, 293.66, 311.13, 349.23, 392.00, 466.16];
 		
 		function scheduleNote() {
-			if (!archiveMelodyActive || ctx?.state === 'suspended') return;
+			if (!archiveMelodyActive) return;
 			
-			if (Math.random() > 0.3) { // 70% chance to play a note (sparse generative)
+			if (ctx?.state !== 'suspended' && Math.random() > 0.3) { // 70% chance to play a note (sparse generative)
 				const freq = scale[Math.floor(Math.random() * scale.length)];
 				const isHigh = freq > 250;
 				
@@ -633,7 +633,7 @@ export function setArchiveMelodyActive(active: boolean) {
 
 				const gain = ctx!.createGain();
 				gain.gain.setValueAtTime(0, ctx!.currentTime);
-				gain.gain.linearRampToValueAtTime(0.015, ctx!.currentTime + 0.04);
+				gain.gain.linearRampToValueAtTime(0.04, ctx!.currentTime + 0.04);
 				gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + 1.2);
 
 				osc.connect(filter);
@@ -898,9 +898,14 @@ if (typeof window !== 'undefined') {
 	const unlockAudio = () => {
 		const ctx = getContext();
 		if (ctx && ctx.state === 'suspended') {
-			ctx.resume().catch(() => {});
+			ctx.resume().then(() => {
+				if (ctx.state === 'running') {
+					unlockEvents.forEach(e => window.removeEventListener(e, unlockAudio));
+				}
+			}).catch(() => {});
+		} else if (ctx && ctx.state === 'running') {
+			unlockEvents.forEach(e => window.removeEventListener(e, unlockAudio));
 		}
-		unlockEvents.forEach(e => window.removeEventListener(e, unlockAudio));
 	};
-	unlockEvents.forEach(e => window.addEventListener(e, unlockAudio, { once: true, passive: true }));
+	unlockEvents.forEach(e => window.addEventListener(e, unlockAudio, { passive: true }));
 }

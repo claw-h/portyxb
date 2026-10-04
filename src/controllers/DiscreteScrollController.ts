@@ -24,7 +24,7 @@ export class DiscreteScrollController {
         this.lenis.options.smoothWheel = false;
         
         this.currentIndex = this.getClosestIndex(window.scrollY);
-        setArchiveMelodyActive(this.currentIndex >= 11);
+        setArchiveMelodyActive(this.currentIndex >= 9);
     }
 
     private updateSnapPoints = () => {
@@ -60,7 +60,7 @@ export class DiscreteScrollController {
     private onResize = () => {
         this.updateSnapPoints();
         this.currentIndex = this.getClosestIndex(window.scrollY);
-        setArchiveMelodyActive(this.currentIndex >= 11);
+        setArchiveMelodyActive(this.currentIndex >= 9);
     }
 
     private onWheel = (e: WheelEvent) => {
@@ -116,7 +116,7 @@ export class DiscreteScrollController {
                 } else {
                     playSnapReverse();
                 }
-                setArchiveMelodyActive(this.currentIndex >= 11);
+                setArchiveMelodyActive(this.currentIndex >= 9);
             }
             
             this.wheelAccumulator = 0;
