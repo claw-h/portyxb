@@ -1429,54 +1429,36 @@ export function setupHeartScene(): LoopController | null {
         const isDissected = currentProgress >= 0.62;
         if (isDissected && hoveredSliceIndex >= 0) {
             if (hoveredSliceIndex !== modalState.pendingIndex) {
-                // New slice — reset dwell, start collapsing if detail is open
                 modalState.pendingIndex = hoveredSliceIndex;
                 modalState.dwellTimer = 0;
-                if (modalState.displayIndex >= 0) {
-                    modalState.phase = 'collapsing';
-                }
             } else {
                 modalState.dwellTimer += dtSeconds;
             }
         } else {
-            // Nothing hovered — collapse and clear
             modalState.pendingIndex = -1;
             modalState.dwellTimer = 0;
-            if (modalState.displayIndex >= 0) {
-                modalState.phase = 'collapsing';
-            }
         }
 
-        // --- State machine for detail section scaleY ---
-        if (modalState.phase === 'collapsing') {
-            modalState.targetScaleY = 0;
-            if (modalState.scaleY < 0.02) {
-                modalState.scaleY = 0;
-                if (modalState.pendingIndex >= 0 && modalState.dwellTimer >= 1.0) {
-                    modalState.displayIndex = modalState.pendingIndex;
-                    modalState.phase = 'expanding';
-                } else if (modalState.pendingIndex < 0) {
-                    modalState.displayIndex = -1;
-                    modalState.phase = 'collapsed';
-                }
-                // else: stay collapsed, waiting for dwell to satisfy
-            }
-        }
-
-        if (modalState.phase === 'expanding') {
-            modalState.targetScaleY = 1.0;
-            if (modalState.scaleY > 0.98) {
-                modalState.scaleY = 1.0; // snap
-            }
-        }
-
-        // From collapsed, if dwell is satisfied, begin expanding
-        if (modalState.phase === 'collapsed' && modalState.pendingIndex >= 0 && modalState.dwellTimer >= 1.0) {
+        // --- Simplified State Machine ---
+        // If we've dwelled long enough, we lock in the display index and expand.
+        if (modalState.pendingIndex >= 0 && modalState.dwellTimer >= 0.5) {
             modalState.displayIndex = modalState.pendingIndex;
-            modalState.phase = 'expanding';
+            modalState.targetScaleY = 1.0;
+        } else {
+            // Otherwise, we collapse.
+            modalState.targetScaleY = 0.0;
         }
 
-        modalState.scaleY = lerp(modalState.scaleY, modalState.targetScaleY, 0.12);
+        // Lerp scale
+        modalState.scaleY = lerp(modalState.scaleY, modalState.targetScaleY, 0.15);
+        if (Math.abs(modalState.scaleY - modalState.targetScaleY) < 0.01) {
+            modalState.scaleY = modalState.targetScaleY;
+        }
+
+        // Clear display index ONLY when fully collapsed, so text doesn't vanish mid-animation
+        if (modalState.scaleY === 0) {
+            modalState.displayIndex = -1;
+        }
 
         // --- Position to the left of the heart with viewport clamping ---
         // The panel renders at scale(var(--panel-scale, 0.80)), so use 0.80
