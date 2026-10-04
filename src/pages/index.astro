@@ -89,8 +89,6 @@ import DossierIndex from '../components/DossierIndex.astro';
 		════════════════════════════════════════════ -->
 		<section class="dream-zone canvas-zone" data-canvas-zone="dream" data-snap-point="true">
 			<div id="phase-3" style="position: absolute; top: 0;"></div>
-			<div data-snap-point="true" style="position: absolute; top: 100vh;"></div>
-			<div data-snap-point="true" style="position: absolute; top: 200vh;"></div>
 			<canvas data-dream-canvas></canvas>
 			<!-- No DOM copy — declaration is rendered character-by-character via pretext onto canvas -->
 		</section>
@@ -142,6 +140,8 @@ import DossierIndex from '../components/DossierIndex.astro';
 	
 	let setDreamScrollVelocity: ((v: number) => void) | null = null;
 	let setDreamScrollProgress: ((p: number) => void) | null = null;
+	let setDossierScrollVelocity: ((v: number) => void) | null = null;
+	let setDossierScrollProgress: ((p: number) => void) | null = null;
 
 	// The whole site sits fully laid out behind the (opaque) preloader from
 	// first paint — this class just locks scroll so the page can't be
@@ -196,9 +196,10 @@ import DossierIndex from '../components/DossierIndex.astro';
 
 	async function initDossierScene() {
 		try {
-			const { setupDossierScene } = await import('../controllers/DossierScene');
-			dossierScene = await setupDossierScene();
-
+			const mod = await import('../controllers/DossierScene');
+			dossierScene = await mod.setupDossierScene();
+			setDossierScrollVelocity = mod.setDossierScrollVelocity;
+			setDossierScrollProgress = mod.setDossierScrollProgress;
 			const originalDestroy = (window as any).destroy || function() {};
 			(window as any).destroy = () => {
 				originalDestroy();
@@ -236,8 +237,6 @@ import DossierIndex from '../components/DossierIndex.astro';
 	const discreteScrollController = new DiscreteScrollController(lenis);
 
 
-
-
 	// Held until the site is actually ready — see onReady() below.
 	lenis.stop();
 
@@ -245,6 +244,8 @@ import DossierIndex from '../components/DossierIndex.astro';
 	lenis.on('scroll', (e: { velocity: number; progress: number; scroll: number; }) => {
 		setDreamScrollVelocity?.(e.velocity);
 		setDreamScrollProgress?.(e.progress); 
+		setDossierScrollVelocity?.(e.velocity);
+		setDossierScrollProgress?.(e.progress);
 	});
 
     // 4. Mount Lenis to the browser's requestAnimationFrame
@@ -750,7 +751,8 @@ import DossierIndex from '../components/DossierIndex.astro';
 	.dream-zone {
 		min-height: 300vh;
 		position: relative;
-		background: #020508;
+		background: transparent;
+		z-index: 20;
 		/* No padding — canvas fills the full section */
 		padding: 0;
 		display: block;
@@ -770,9 +772,17 @@ import DossierIndex from '../components/DossierIndex.astro';
 	.dossier-zone {
 		padding: 0;
 		display: block;
-		background: #020508;
+		background: transparent; /* Changed from #020508 to reveal DreamCanvas underneath during transition */
 		/* Same sticky fix as .dream-zone and .biome-zone */
 		overflow: visible;
+		margin-top: -100vh; /* Overlap exactly with the end of DreamCanvas */
+		position: relative;
+		z-index: 10;
+		pointer-events: none; /* Let clicks pass through until archive is open if needed, or handle in JS */
+	}
+
+	.dossier-sticky {
+		pointer-events: auto; /* Re-enable pointer events for the UI */
 	}
 
 		/* ─── Zone 03: Biome Sphere ──────────────────────── */

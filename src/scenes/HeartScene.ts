@@ -1213,7 +1213,6 @@ export function setupHeartScene(): LoopController | null {
 	}
 
     renderer.info.autoReset = false;
-    let lastUITime = 0;
 
     const render = (time: number): void => {
         renderer.info.reset();
@@ -1364,61 +1363,57 @@ export function setupHeartScene(): LoopController | null {
             hoveredSliceIndex = -1;
         }
 
-        // Throttle all DOM layout/paint heavy UI updates to ~15fps (every 66ms)
-        const uiNeedsUpdate = time - lastUITime > 66;
-
+        // UI updates now run at full framerate for smoother animations.
+        // The DOM operations have been optimized to avoid layout thrashing.
+        
         const panelVisibility = smoothstep(0.62, 0.52, currentProgress) * smoothstep(0.01, 0.04, currentProgress);
         const SCALE = 0.40;
         const PANEL_BASE_WIDTH = 530; 
         const actualPanelWidth = PANEL_BASE_WIDTH * SCALE;
 
-        if (uiNeedsUpdate) {
-            const leftPanelX = window.innerWidth * (-0.1); 
-            const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
-            const panelY = window.innerHeight * 0.22;      
+        const leftPanelX = window.innerWidth * (-0.1); 
+        const rightPanelX = window.innerWidth - actualPanelWidth - (window.innerWidth * 0.02); 
+        const panelY = window.innerHeight * 0.22;      
 
-            const screenWidth = window.innerWidth;
-            const screenCenter = screenWidth / 2;
-            const maxRotationY = 5;  
-            const maxDepthZ = -300;   
+        const screenWidth = window.innerWidth;
+        const screenCenter = screenWidth / 2;
+        const maxRotationY = 5;  
+        const maxDepthZ = -300;   
 
-            const leftNormX = (leftPanelX - screenCenter) / screenCenter; 
-            const leftRotationY = leftNormX * -maxRotationY; 
-            const leftZ = Math.abs(leftNormX) * maxDepthZ;
+        const leftNormX = (leftPanelX - screenCenter) / screenCenter; 
+        const leftRotationY = leftNormX * -maxRotationY; 
+        const leftZ = Math.abs(leftNormX) * maxDepthZ;
 
-            const rightNormX = (rightPanelX - screenCenter) / screenCenter;
-            const rightRotationY = rightNormX * -maxRotationY;
-            const rightZ = Math.abs(rightNormX) * maxDepthZ;
+        const rightNormX = (rightPanelX - screenCenter) / screenCenter;
+        const rightRotationY = rightNormX * -maxRotationY;
+        const rightZ = Math.abs(rightNormX) * maxDepthZ;
 
-            panelManager.update('telemetry-left', {
-                x: leftPanelX,
-                y: panelY,
-                z: leftZ,                 
-                rotationY: leftRotationY, 
-                opacity: panelVisibility,
-                values: {
-                    heartFade: heartFade * 100,
-                    dissection: dissectionProgress * 100,
-                    progressKnob: currentProgress * 100,
-                    progressPct: currentProgress * 100
-                }
-            });
+        panelManager.update('telemetry-left', {
+            x: leftPanelX,
+            y: panelY,
+            z: leftZ,                 
+            rotationY: leftRotationY, 
+            opacity: panelVisibility,
+            values: {
+                heartFade: heartFade * 100,
+                dissection: dissectionProgress * 100,
+                progressKnob: currentProgress * 100,
+                progressPct: currentProgress * 100
+            }
+        });
 
-            panelManager.update('telemetry-right', {
-                x: rightPanelX - 300,
-                y: panelY,
-                z: rightZ,                  
-                rotationY: rightRotationY,  
-                opacity: panelVisibility,
-                values: {
-                    lat: mouse.targetY * 100,
-                    long: mouse.targetX * 100,
-                    intersect: isIntersecting 
-                }
-            });
-
-            lastUITime = time;
-        }
+        panelManager.update('telemetry-right', {
+            x: rightPanelX - 300,
+            y: panelY,
+            z: rightZ,                  
+            rotationY: rightRotationY,  
+            opacity: panelVisibility,
+            values: {
+                lat: mouse.targetY * 100,
+                long: mouse.targetX * 100,
+                intersect: isIntersecting 
+            }
+        });
 
         // -----------------------------------------------------------------------
         // Tissue Analysis Modal — Shrink/Expand with 1s Dwell
@@ -1431,7 +1426,7 @@ export function setupHeartScene(): LoopController | null {
         modalState.panelOpacity = lerp(modalState.panelOpacity, targetPanelOpacity, 0.08);
 
         // --- Dwell tracking ---
-        const isDissected = currentProgress > 0.58;
+        const isDissected = currentProgress >= 0.58;
         if (isDissected && hoveredSliceIndex >= 0) {
             if (hoveredSliceIndex !== modalState.pendingIndex) {
                 // New slice — reset dwell, start collapsing if detail is open
@@ -1557,35 +1552,33 @@ export function setupHeartScene(): LoopController | null {
         const fpsLog = statsAny.averageFps?.logs;
         const statsFps = (fpsLog && fpsLog.length > 0) ? fpsLog[fpsLog.length - 1] : currentFps;
 
-        if (uiNeedsUpdate) {
-            // Position strictly in the top right corner
-            const engineMargin = 24;
-            const engineX = window.innerWidth - 600;
-            const engineY = engineMargin;
-            
-            const engineVisibility = smoothstep(0.01, 0.04, currentProgress) * (1.0 - smoothstep(0.92, 0.94, currentProgress));
-            const engineExpanded = smoothstep(0.52, 0.62, currentProgress);
+        // Position strictly in the top right corner
+        const engineMargin = 24;
+        const engineX = window.innerWidth - 600;
+        const engineY = engineMargin;
+        
+        const engineVisibility = smoothstep(0.01, 0.04, currentProgress) * (1.0 - smoothstep(0.92, 0.94, currentProgress));
+        const engineExpanded = smoothstep(0.52, 0.62, currentProgress);
 
-            panelManager.update('engine-diagnostics', {
-                x: engineX,
-                y: engineY,
-                z: 0,
-                rotationY: 0,
-                opacity: engineVisibility,
-                scaleY: engineExpanded,
-                titleState0: 'SYSTEM STANDBY',
-                titleState1: 'ENGINE DIAGNOSTICS',
-                titleProgress: engineExpanded,
-                values: {
-                    fps: statsFps,
-                    drawCalls: renderer.info.render.calls,
-                    triangles: renderer.info.render.triangles,
-                    heat: dissectionProgress * 100,
-                    discharge: dischargeActive ? 1 : 0,
-                    coreColor: slices.length > 0 ? '#' + slices[0].userData.materials.solid.emissive.getHexString().toUpperCase() : '#000000'
-                }
-            });
-        }
+        panelManager.update('engine-diagnostics', {
+            x: engineX,
+            y: engineY,
+            z: 0,
+            rotationY: 0,
+            opacity: engineVisibility,
+            scaleY: engineExpanded,
+            titleState0: 'SYSTEM STANDBY',
+            titleState1: 'ENGINE DIAGNOSTICS',
+            titleProgress: engineExpanded,
+            values: {
+                fps: statsFps,
+                drawCalls: renderer.info.render.calls,
+                triangles: renderer.info.render.triangles,
+                heat: dissectionProgress * 100,
+                discharge: dischargeActive ? 1 : 0,
+                coreColor: slices.length > 0 ? '#' + slices[0].userData.materials.solid.emissive.getHexString().toUpperCase() : '#000000'
+            }
+        });
     };
 
 	// Set autoReset to false so we can accumulate draw calls across all EffectComposer passes

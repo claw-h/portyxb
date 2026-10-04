@@ -64,7 +64,13 @@ export class DiscreteScrollController {
     }
 
     private onWheel = (e: WheelEvent) => {
-        e.preventDefault(); 
+        // Allow native scrolling inside the archive modal
+        const modal = document.getElementById('archive-modal');
+        if (modal && !modal.classList.contains('hidden') && modal.contains(e.target as Node)) {
+            return; // Do nothing, allow default scrolling
+        }
+
+        e.preventDefault();
 
         // Ignore resting trackpad micro-events
         if (Math.abs(e.deltaY) < 2) return;
@@ -72,7 +78,7 @@ export class DiscreteScrollController {
         const now = Date.now();
         
         // Hard lockout to prevent jitter, skipped scenes, and "snaps all at once"
-        if (now - this.lastSnapTime < 1000) {
+        if (now - this.lastSnapTime < 800) {
             this.wheelAccumulator = 0;
             return;
         }
