@@ -1426,13 +1426,13 @@ export function setupHeartScene(): LoopController | null {
         modalState.panelOpacity = lerp(modalState.panelOpacity, targetPanelOpacity, 0.08);
 
         // --- Dwell tracking ---
-        const isDissected = currentProgress >= 0.58;
+        const isDissected = currentProgress >= 0.62;
         if (isDissected && hoveredSliceIndex >= 0) {
             if (hoveredSliceIndex !== modalState.pendingIndex) {
                 // New slice — reset dwell, start collapsing if detail is open
                 modalState.pendingIndex = hoveredSliceIndex;
                 modalState.dwellTimer = 0;
-                if (modalState.displayIndex >= 0 && modalState.scaleY > 0.01) {
+                if (modalState.displayIndex >= 0) {
                     modalState.phase = 'collapsing';
                 }
             } else {
@@ -1442,7 +1442,7 @@ export function setupHeartScene(): LoopController | null {
             // Nothing hovered — collapse and clear
             modalState.pendingIndex = -1;
             modalState.dwellTimer = 0;
-            if (modalState.displayIndex >= 0 && modalState.scaleY > 0.01) {
+            if (modalState.displayIndex >= 0) {
                 modalState.phase = 'collapsing';
             }
         }
@@ -1502,6 +1502,7 @@ export function setupHeartScene(): LoopController | null {
         fixedX = Math.max(MODAL_MARGIN, Math.min(fixedX, window.innerWidth - modalWidth - MODAL_MARGIN));
         fixedY = Math.max(MODAL_MARGIN, Math.min(fixedY, window.innerHeight - modalHeight - MODAL_MARGIN));
 
+        const safeIndex = modalState.displayIndex >= 0 ? modalState.displayIndex : (modalState.pendingIndex >= 0 ? modalState.pendingIndex : -1);
         panelManager.update('slice-info', {
             x: fixedX,
             y: fixedY,
@@ -1509,8 +1510,8 @@ export function setupHeartScene(): LoopController | null {
             scaleY: modalState.scaleY,
             activeLabel: modalState.pendingIndex >= 0 ? (SLICE_COUNT - 1) - modalState.pendingIndex : -1,
             values: {
-                sliceName: modalState.displayIndex >= 0 ? SLICE_NAMES[modalState.displayIndex] : '',
-                sliceText: modalState.displayIndex >= 0 ? SLICE_DESCRIPTIONS[modalState.displayIndex] : ''
+                sliceName: safeIndex >= 0 ? SLICE_NAMES[safeIndex] : '',
+                sliceText: safeIndex >= 0 ? SLICE_DESCRIPTIONS[safeIndex] : ''
             }
         });
 
