@@ -235,7 +235,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 			document.documentElement.style.visibility = '';
 			return;
 		}
-		document.documentElement.style.visibility = 'hidden'; // hide artefacts immediately
+		document.documentElement.style.visibility = '';
 		window.clearTimeout(gateReloadTimer);
 		gateReloadTimer = window.setTimeout(() => {
 			if (mobileGateMQ.matches !== isMobileGate) location.reload();
