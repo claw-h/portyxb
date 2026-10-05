@@ -17,8 +17,12 @@ import '@fontsource-variable/unbounded';
 		/>
 		<title>Port folio</title>
 		<script is:inline>
-			if (window.matchMedia('(max-width: 768px), (pointer: coarse)').matches) {
+			const isMobileDevice = window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
+			if (isMobileDevice) {
 				document.documentElement.classList.add('is-mobile-gate');
+				if (location.pathname !== '/mobile' && !location.pathname.startsWith('/mobile/')) {
+					location.replace('/mobile');
+				}
 			}
 		</script>
 		<script is:inline>
