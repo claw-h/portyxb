@@ -60,6 +60,11 @@ import DossierIndex from '../components/DossierIndex.astro';
 				<canvas class="heart-canvas" data-heart-canvas></canvas>
 				<canvas class="fire-canvas"  data-fire-canvas></canvas>
 				<canvas class="ink-canvas"   data-ink-canvas></canvas>
+				<div class="hero-advisory-text">
+					<div class="advisory-line type-1">> SYSTEM ADVISORY</div>
+					<div class="advisory-line type-2">> AUDIO LINK [HEADPHONES] RECOMMENDED</div>
+					<div class="advisory-line type-3">> PROCEED WHEN READY<span class="blink">_</span></div>
+				</div>
 				<div class="scroll-prompt" data-scroll-prompt>scroll to explore</div>
 				<div class="hero-copy" data-hero-copy>
 					<p class="hero-copy-line hero-copy-line--one">This is where it opens.</p>
@@ -100,7 +105,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 		<section class="dossier-zone canvas-zone" id="work" style="position: relative; height: 300vh;" data-snap-point="true">
 			<div data-snap-point="true" style="position: absolute; top: 100vh;"></div>
 			<div data-snap-point="true" style="position: absolute; top: 200vh;"></div>
-			<div class="dossier-sticky" style="position: sticky; top: 0; height: 100vh; overflow: hidden;">
+			<div class="dossier-sticky" style="position: sticky; top: 0; overflow: hidden;">
 				<DossierIndex />
 			</div>
 		</section>
@@ -133,7 +138,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 <script>
 	import { setupCursor }         from '../controllers/CursorController';
 	import { setupHeroCopyReveal } from '../controllers/ScrollReveal';
-	import { onReady }             from '../utils/loadState';
+	import { onReady, markReady }             from '../utils/loadState';
 	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
 	import { DiscreteScrollController } from '../controllers/DiscreteScrollController';
@@ -180,7 +185,67 @@ import DossierIndex from '../components/DossierIndex.astro';
 		zones.forEach(zone => observer.observe(zone));
 	});
 
+	// Must match the @media query in styles/dossier.css
+	const mobileGateMQ = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+	const isMobileGate = mobileGateMQ.matches;
+	if (isMobileGate) {
+		document.documentElement.classList.add('is-mobile-gate');
+		
+		// FAILSAFE: If Vite's CSS HMR is stuck serving an old stylesheet, this JS will forcefully apply the layout changes.
+		const hideSelectors = '.hero-sequence, .dream-zone, .hero-progress, .hero-border-svg, .lens-cursor, .scroll-prompt, .phase-nav, #heart-ui-layer';
+		document.querySelectorAll(hideSelectors).forEach(el => {
+			if (el) el.style.setProperty('display', 'none', 'important');
+		});
+		
+		const dossierZone = document.querySelector('.dossier-zone');
+		if (dossierZone) {
+			dossierZone.style.setProperty('height', '100dvh', 'important');
+			dossierZone.style.setProperty('position', 'fixed', 'important');
+			dossierZone.style.setProperty('inset', '0', 'important');
+			dossierZone.style.setProperty('margin', '0', 'important');
+			dossierZone.style.setProperty('z-index', '99999', 'important');
+			dossierZone.style.setProperty('background', '#020508', 'important');
+			dossierZone.style.setProperty('overflow', 'hidden', 'important');
+			dossierZone.style.setProperty('display', 'block', 'important');
+		}
+
+		const dossierSticky = document.querySelector('.dossier-sticky');
+		if (dossierSticky) dossierSticky.style.setProperty('height', '100%', 'important');
+		
+		const dossierWrapper = document.querySelector('.dossier-wrapper');
+		if (dossierWrapper) dossierWrapper.style.setProperty('height', '100%', 'important');
+
+		const mobileGate = document.getElementById('mobile-gate');
+		if (mobileGate) mobileGate.style.setProperty('display', 'flex', 'important');
+
+		const dossierCanvas = document.getElementById('dossier-canvas');
+		if (dossierCanvas) dossierCanvas.style.setProperty('display', 'none', 'important');
+	}
+
+	// Scenes are either fully booted (desktop) or never booted (mobile) at load time.
+	// Crossing the breakpoint mid-session would leave orphaned WebGL contexts,
+	// telemetry panels and listeners behind (or black voids going the other way),
+	// so the only clean transition is a fresh page load in the new mode.
+	let gateReloadTimer: number | undefined;
+	mobileGateMQ.addEventListener('change', (e) => {
+		if (e.matches === isMobileGate) {
+			window.clearTimeout(gateReloadTimer); // resized back before settling
+			document.documentElement.style.visibility = '';
+			return;
+		}
+		document.documentElement.style.visibility = 'hidden'; // hide artefacts immediately
+		window.clearTimeout(gateReloadTimer);
+		gateReloadTimer = window.setTimeout(() => {
+			if (mobileGateMQ.matches !== isMobileGate) location.reload();
+			else document.documentElement.style.visibility = '';
+		}, 250);
+	});
+
 	async function initHeartScene() {
+		if (isMobileGate) {
+			markReady('heart');
+			return;
+		}
 		if (isInitializing || active3DScene) return;
 		isInitializing = true;
 		try {
@@ -195,6 +260,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 	initHeartScene();
 
 	async function initDossierScene() {
+		if (isMobileGate) return;
 		try {
 			const mod = await import('../controllers/DossierScene');
 			dossierScene = await mod.setupDossierScene();
@@ -214,6 +280,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 	}
 
 	async function initDreamScene() {
+		if (isMobileGate) return;
 		try {
 			const mod = await import('../scenes/DreamCanvas');
 			const dream = mod.setupDreamCanvas();
@@ -264,6 +331,31 @@ import DossierIndex from '../components/DossierIndex.astro';
 	onReady(() => {
 		document.documentElement.classList.remove('is-site-loading');
 		lenis.start();
+
+		// Check if it's the user's first visit
+		const hasSeenAdvisory = localStorage.getItem('seen-advisory');
+		if (!hasSeenAdvisory) {
+			const advisoryBox = document.querySelector('.hero-advisory-text');
+			if (advisoryBox) {
+				// Wait 1 second after preloader is gone, then show the box
+				setTimeout(() => {
+					advisoryBox.classList.add('is-active');
+					localStorage.setItem('seen-advisory', 'true');
+					
+					// Auto dismiss after 7 seconds
+					setTimeout(() => {
+						advisoryBox.classList.add('is-fading');
+					}, 7000);
+				}, 1000);
+				
+				// Dismiss immediately if they start scrolling
+				lenis.on('scroll', () => {
+					if (lenis.scroll > 20 && !advisoryBox.classList.contains('is-fading')) {
+						advisoryBox.classList.add('is-fading');
+					}
+				});
+			}
+		}
 
 		const initDeferredScenes = () => {
 			if (!dreamInit) {
@@ -414,6 +506,66 @@ import DossierIndex from '../components/DossierIndex.astro';
 	.hero-sequence.is-idle:not(.has-started) .scroll-prompt {
 		opacity: 1;
 		animation: prompt-breathe 2.2s ease-in-out infinite;
+	}
+
+	/* ─── Floating Advisory Text ───────────────────────────────── */
+	.hero-advisory-text {
+		position: absolute;
+		left: 50%;
+		top: 68%;
+		transform: translateX(-50%);
+		z-index: 7; /* Sits cleanly behind the scroll prompt */
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.35rem;
+		pointer-events: none;
+		opacity: 0;
+		
+		font-family: 'JetBrains Mono', monospace, 'Courier New', Courier;
+		font-size: 0.72rem;
+		font-weight: 500;
+		color: rgba(143, 220, 255, 0.45);
+		text-shadow: 0 0 10px rgba(77, 162, 255, 0.3);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+
+		/* Smooth fade for opacity, color, and glow */
+		transition: opacity 1.2s ease, color 1.2s ease, text-shadow 1.2s ease;
+	}
+
+	.hero-advisory-text.is-active {
+		opacity: 1;
+	}
+
+	/* Fade to black effect */
+	.hero-advisory-text.is-fading {
+		opacity: 0;
+		color: #000000;
+		text-shadow: 0 0 0 transparent;
+	}
+
+	.hero-advisory-text .advisory-line {
+		white-space: nowrap;
+		/* Using clip-path instead of width prevents the container from changing size 
+		   during the typing animation, completely eliminating any jumping or jitter! */
+		clip-path: inset(0 100% 0 0);
+	}
+
+	.hero-advisory-text.is-active .type-1 { animation: type-clip 1s steps(30, end) 0.5s forwards; }
+	.hero-advisory-text.is-active .type-2 { animation: type-clip 1s steps(30, end) 1.5s forwards; }
+	.hero-advisory-text.is-active .type-3 { animation: type-clip 1s steps(30, end) 2.5s forwards; }
+
+	@keyframes type-clip {
+		to { clip-path: inset(0 0 0 0); }
+	}
+
+	.hero-advisory-text .blink {
+		animation: blink-caret 1s step-end infinite;
+	}
+
+	@keyframes blink-caret {
+		50% { opacity: 0; }
 	}
 
 	/* ─── HUD overlay ────────────────────────────────── */
@@ -782,6 +934,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 	}
 
 	.dossier-sticky {
+		height: 100vh;
 		pointer-events: auto; /* Re-enable pointer events for the UI */
 	}
 

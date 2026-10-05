@@ -17,3 +17,239 @@
     z-index: 1;
     pointer-events: auto; /* Required for clicking tabs in 3D */
 }
+
+/* ─── MOBILE GATE & RESPONSIVE LOCKS ─── */
+#mobile-gate {
+    display: none;
+}
+
+html.is-mobile-gate .hero-sequence, 
+html.is-mobile-gate .dream-zone, 
+html.is-mobile-gate .hero-progress, 
+html.is-mobile-gate .hero-border-svg, 
+html.is-mobile-gate .lens-cursor, 
+html.is-mobile-gate .scroll-prompt, 
+html.is-mobile-gate .phase-nav, 
+html.is-mobile-gate #heart-ui-layer {
+    display: none !important;
+}
+
+/* Force dossier to be the only thing on screen */
+html.is-mobile-gate .dossier-zone {
+    height: 100vh !important;  /* fallback for browsers without dvh */
+    height: 100dvh !important; /* the actually-visible viewport height */
+    position: fixed !important;
+    inset: 0 !important;
+    margin: 0 !important; /* desktop uses margin-top:-100vh to overlap Dream; that shifts fixed elements off-screen */
+    z-index: 99999 !important;
+    background: #020508 !important;
+    overflow: hidden !important;
+    display: block !important;
+}
+
+/* Hide the WebGL Canvas */
+html.is-mobile-gate .canvas-placeholder, 
+html.is-mobile-gate #dossier-canvas {
+    display: none !important;
+}
+
+/* The component sets the wrapper to 100vh, and index.astro sets dossier-sticky to 100vh inline.
+   On phones 100vh is taller than what's visible, pushing the buttons below the fold.
+   Force them all to 100% of the dvh-sized zone instead. */
+html.is-mobile-gate .dossier-sticky,
+html.is-mobile-gate .dossier-wrapper {
+    height: 100% !important;
+}
+
+/* Show and style the Mobile Gate */
+html.is-mobile-gate #mobile-gate {
+    display: flex !important;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: 
+        linear-gradient(rgba(77, 162, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(77, 162, 255, 0.035) 1px, transparent 1px),
+        #020508;
+    background-size: 42px 42px;
+    text-align: center;
+    /* Bottom padding reserves the button band so the card is centred in the
+       space ABOVE the buttons and can never sit underneath them. */
+    padding:
+        calc(1.5rem + env(safe-area-inset-top))
+        calc(1.5rem + env(safe-area-inset-right))
+        calc(var(--gate-btn-band) + env(safe-area-inset-bottom))
+        calc(1.5rem + env(safe-area-inset-left));
+    overflow-y: auto; /* very short screens: the card scrolls rather than clips */
+    color: #dbeeff;
+}
+html.is-mobile-gate #mobile-gate .gate-content {
+    margin: auto; /* centres, but unlike align-items:center never clips the top when overflowing */
+}
+
+/* Bring the DOM UI (Buttons) to the front so they are clickable */
+html.is-mobile-gate .dom-overlay {
+    z-index: 10 !important;
+}
+
+/* Shared geometry for the button pair */
+html.is-mobile-gate .dossier-wrapper {
+    --gate-btn-w: min(calc(50% - 2rem), 220px);  /* half-width on phones, capped on big screens */
+    --gate-btn-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    --gate-btn-band: calc(1.5rem + 52px + 2rem); /* bottom gap + button + breathing room */
+}
+
+/* The pair is centred as a group: 1rem gap between them */
+html.is-mobile-gate .archive-btn {
+    right: calc(50% - var(--gate-btn-w) - 0.5rem) !important;
+    bottom: var(--gate-btn-bottom) !important;
+    width: var(--gate-btn-w) !important;
+}
+
+html.is-mobile-gate .id-card {
+    left: calc(50% - var(--gate-btn-w) - 0.5rem) !important;
+    right: auto !important;
+    bottom: var(--gate-btn-bottom) !important;
+    width: var(--gate-btn-w) !important;
+    transition:
+        left 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+        width 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+        height 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+        border-radius 0.6s ease,
+        border-color 0.3s ease !important;
+}
+
+html.is-mobile-gate .id-card.is-open {
+    --gate-card-w: min(calc(100% - 3rem), 520px);
+    width: var(--gate-card-w) !important;
+    left: calc(50% - var(--gate-card-w) / 2) !important;
+}
+
+/* Make Archive Modal fit mobile screen + frost whatever is behind it.
+   (.dossier-wrapper prefix beats Astro's scoped [data-astro-cid] specificity) */
+html.is-mobile-gate .dossier-wrapper .archive-modal {
+    padding: 1rem 0.5rem !important;
+    background: rgba(4, 6, 10, 0.55);
+    backdrop-filter: blur(14px) saturate(1.2);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+
+html.is-mobile-gate .dossier-wrapper .archive-content {
+    padding: 1.25rem 1rem 6rem !important; /* bottom room so the last item clears the buttons */
+    margin-top: 1rem !important;
+}
+
+/* Single-row title bar: title on the left, [X] vertically centred on the right */
+html.is-mobile-gate .dossier-wrapper .archive-header {
+    padding: 0.9rem 2.25rem !important; /* keeps clear of the corner screws */
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.75rem !important;
+}
+
+html.is-mobile-gate .dossier-wrapper .archive-close {
+    position: relative !important;
+    inset: auto !important;
+    flex-shrink: 0;
+    align-self: center !important;
+    padding: 0.45rem 0.7rem !important;
+}
+
+/* Scale down the title */
+html.is-mobile-gate h2.archive-title {
+    font-size: 0.8rem !important;
+    letter-spacing: 0.15em !important;
+}
+
+html.is-mobile-gate .category-title {
+    font-size: 0.75rem !important;
+    min-width: auto !important;
+}
+
+/* Mobile Gate Content Styling */
+.gate-content {
+    max-width: 400px;
+    padding: 2.5rem 2rem;
+    background: rgba(22, 24, 29, 0.65);
+    border: 1px solid #000;
+    border-radius: 6px;
+    box-shadow: 
+        inset 0 2px 2px rgba(255, 255, 255, 0.05),
+        inset 0 -2px 4px rgba(0, 0, 0, 0.6),
+        0 12px 20px rgba(0, 0, 0, 0.5);
+    position: relative;
+}
+
+.gate-content::before, .gate-content::after {
+    content: '+';
+    position: absolute;
+    top: 1.5rem;
+    font-size: 14px;
+    color: #3a4454;
+    font-weight: 800;
+    text-shadow: 0 1px 1px rgba(255,255,255,0.1), 0 -1px 1px rgba(0,0,0,0.8);
+}
+.gate-content::before { left: 1.5rem; }
+.gate-content::after { right: 1.5rem; }
+
+.gate-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.2em;
+    margin: 0 0 1.2rem;
+    color: #8fdcff;
+    text-shadow: 0 0 12px rgba(77, 162, 255, 0.4);
+}
+
+.gate-title::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-right: 12px;
+    border-radius: 50%;
+    background: #ff3333;
+    box-shadow: 
+        inset 0 1px 2px rgba(255,255,255,0.6),
+        0 0 8px #ff3333,
+        0 0 16px #ff3333;
+    vertical-align: middle;
+}
+
+.gate-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    color: #b0bac9;
+    margin-bottom: 1.5rem;
+}
+
+.gate-separator {
+    height: 1px;
+    background: repeating-linear-gradient(
+        90deg,
+        rgba(255,255,255,0.1) 0, rgba(255,255,255,0.1) 4px,
+        transparent 4px, transparent 8px
+    );
+    margin: 1.5rem 0;
+}
+
+.gate-subtext {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.75rem;
+    color: rgba(176, 186, 201, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+/* Short screens (landscape phones): tighten the card so it fits above the button band */
+@media (max-width: 768px) and (max-height: 560px), (pointer: coarse) and (max-height: 560px) {
+    html.is-mobile-gate .dossier-wrapper { --gate-btn-band: calc(1rem + 52px + 1rem); --gate-btn-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+    html.is-mobile-gate #mobile-gate { padding-top: calc(1rem + env(safe-area-inset-top)); }
+    html.is-mobile-gate .gate-content { max-width: 520px; padding: 1.25rem 2.25rem; }
+    html.is-mobile-gate .gate-content::before, html.is-mobile-gate .gate-content::after { top: 1rem; }
+    html.is-mobile-gate .gate-title { font-size: 0.95rem; margin-bottom: 0.6rem; }
+    html.is-mobile-gate .gate-text { font-size: 0.78rem; line-height: 1.45; margin-bottom: 0.6rem; }
+    html.is-mobile-gate .gate-separator { margin: 0.6rem 0; }
+}
