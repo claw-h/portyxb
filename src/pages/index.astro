@@ -232,14 +232,11 @@ import DossierIndex from '../components/DossierIndex.astro';
 	mobileGateMQ.addEventListener('change', (e) => {
 		if (e.matches === isMobileGate) {
 			window.clearTimeout(gateReloadTimer); // resized back before settling
-			document.documentElement.style.visibility = '';
 			return;
 		}
-		document.documentElement.style.visibility = '';
 		window.clearTimeout(gateReloadTimer);
 		gateReloadTimer = window.setTimeout(() => {
 			if (mobileGateMQ.matches !== isMobileGate) location.reload();
-			else document.documentElement.style.visibility = '';
 		}, 250);
 	});
 

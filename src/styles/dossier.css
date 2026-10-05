@@ -43,6 +43,10 @@ html.is-mobile-gate body {
     overflow: auto !important;
 }
 
+html.is-mobile-gate .preloader-shell {
+    display: none !important;
+}
+
 /* Force dossier to be the only thing on screen */
 html.is-mobile-gate .dossier-zone {
     height: 100vh !important;  /* fallback for browsers without dvh */
