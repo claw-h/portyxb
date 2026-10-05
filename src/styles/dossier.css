@@ -88,6 +88,8 @@ html.is-mobile-gate #mobile-gate .gate-content {
 
 /* Bring the DOM UI (Buttons) to the front so they are clickable */
 html.is-mobile-gate .dom-overlay {
+    position: fixed !important;
+    inset: 0 !important;
     z-index: 10 !important;
 }
 
@@ -100,17 +102,21 @@ html.is-mobile-gate .dossier-wrapper {
 
 /* Base state for smaller phones (< 504px) */
 html.is-mobile-gate .archive-btn {
+    position: fixed !important;
     right: 1.5rem !important;
     bottom: var(--gate-btn-bottom) !important;
     width: min(220px, calc(50vw - 2rem)) !important;
+    z-index: 100 !important;
 }
 
 html.is-mobile-gate .id-card {
+    position: fixed !important;
     left: 1.5rem !important;
     right: auto !important;
     bottom: var(--gate-btn-bottom) !important;
     width: min(220px, calc(50vw - 2rem)) !important;
     transform: none;
+    z-index: 101 !important;
 }
 
 /* Fixed state for larger phones & tablets (>= 504px) */
