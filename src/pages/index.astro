@@ -229,9 +229,16 @@ import DossierIndex from '../components/DossierIndex.astro';
 	// so the only clean transition is a fresh page load in the new mode.
 	let gateReloadTimer: number | undefined;
 	mobileGateMQ.addEventListener('change', (e) => {
-		if (e.matches === isMobileGate) {
+		if (e.matches) {
 			window.clearTimeout(gateReloadTimer); // resized back before settling
 			document.documentElement.style.visibility = '';
+			applyMobileGateLayout();
+			return;
+		}
+		if (isMobileGate) {
+			document.documentElement.style.visibility = '';
+			window.clearTimeout(gateReloadTimer);
+			gateReloadTimer = window.setTimeout(() => location.reload(), 250);
 			return;
 		}
 		document.documentElement.style.visibility = 'hidden'; // hide artefacts immediately
