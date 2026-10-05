@@ -75,11 +75,10 @@ html.is-mobile-gate #mobile-gate {
     text-align: center;
     /* Bottom padding reserves the button band so the card is centred in the
        space ABOVE the buttons and can never sit underneath them. */
-    padding:
-        calc(1.5rem + env(safe-area-inset-top))
-        calc(1.5rem + env(safe-area-inset-right))
-        calc(var(--gate-btn-band) + env(safe-area-inset-bottom))
-        calc(1.5rem + env(safe-area-inset-left));
+    padding-top: calc(1.5rem + env(safe-area-inset-top, 0px));
+    padding-right: calc(1.5rem + env(safe-area-inset-right, 0px));
+    padding-bottom: calc(var(--gate-btn-band) + env(safe-area-inset-bottom, 0px));
+    padding-left: calc(1.5rem + env(safe-area-inset-left, 0px));
     overflow-y: auto; /* very short screens: the card scrolls rather than clips */
     color: #dbeeff;
 }
@@ -94,23 +93,36 @@ html.is-mobile-gate .dom-overlay {
 
 /* Shared geometry for the button pair */
 html.is-mobile-gate .dossier-wrapper {
-    --gate-btn-w: min(calc(50% - 2rem), 220px);  /* half-width on phones, capped on big screens */
-    --gate-btn-bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    /* Below 504px, the buttons scale with the viewport (50vw - 1.5rem padding - 0.5rem center gap) */
+    --gate-btn-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
     --gate-btn-band: calc(1.5rem + 52px + 2rem); /* bottom gap + button + breathing room */
 }
 
-/* The pair is centred as a group: 1rem gap between them */
+/* Base state for smaller phones (< 504px) */
 html.is-mobile-gate .archive-btn {
-    right: calc(50% - var(--gate-btn-w) - 0.5rem) !important;
+    right: 1.5rem !important;
     bottom: var(--gate-btn-bottom) !important;
-    width: var(--gate-btn-w) !important;
+    width: calc(50vw - 2rem) !important;
 }
 
 html.is-mobile-gate .id-card {
-    left: calc(50% - var(--gate-btn-w) - 0.5rem) !important;
+    left: 1.5rem !important;
     right: auto !important;
     bottom: var(--gate-btn-bottom) !important;
-    width: var(--gate-btn-w) !important;
+    width: calc(50vw - 2rem) !important;
+}
+
+/* Fixed state for larger phones & tablets (>= 504px) */
+@media (min-width: 504px) {
+    html.is-mobile-gate .archive-btn {
+        right: calc(50% - 220px - 0.5rem) !important;
+        width: 220px !important;
+    }
+    html.is-mobile-gate .id-card {
+        left: calc(50% - 220px - 0.5rem) !important;
+        width: 220px !important;
+    }
+}
     transition:
         left 0.6s cubic-bezier(0.16, 1, 0.3, 1),
         width 0.6s cubic-bezier(0.16, 1, 0.3, 1),
@@ -245,8 +257,8 @@ html.is-mobile-gate .category-title {
 
 /* Short screens (landscape phones): tighten the card so it fits above the button band */
 @media (max-width: 768px) and (max-height: 560px), (pointer: coarse) and (max-height: 560px) {
-    html.is-mobile-gate .dossier-wrapper { --gate-btn-band: calc(1rem + 52px + 1rem); --gate-btn-bottom: calc(1rem + env(safe-area-inset-bottom)); }
-    html.is-mobile-gate #mobile-gate { padding-top: calc(1rem + env(safe-area-inset-top)); }
+    html.is-mobile-gate .dossier-wrapper { --gate-btn-band: calc(1rem + 52px + 1rem); --gate-btn-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); }
+    html.is-mobile-gate #mobile-gate { padding-top: calc(1rem + env(safe-area-inset-top, 0px)); }
     html.is-mobile-gate .gate-content { max-width: 520px; padding: 1.25rem 2.25rem; }
     html.is-mobile-gate .gate-content::before, html.is-mobile-gate .gate-content::after { top: 1rem; }
     html.is-mobile-gate .gate-title { font-size: 0.95rem; margin-bottom: 0.6rem; }

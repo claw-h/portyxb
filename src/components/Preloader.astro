@@ -356,8 +356,7 @@
 <script>
 	import { onProgress, onReady } from '../utils/loadState';
 
-	document.addEventListener('DOMContentLoaded', () => {
-		
+	const initPreloader = () => {
 		const progressBar = document.querySelector('[data-preloader-progress]') as HTMLElement;
 		const percentText = document.querySelector('[data-preloader-percent]') as HTMLElement;
 		const statusText = document.querySelector('.preloader-label .preloader-text') as HTMLElement;
@@ -433,5 +432,11 @@
 				}, 550); 
 			}, 600);
 		}
-	});
+	};
+
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', initPreloader);
+	} else {
+		initPreloader();
+	}
 </script>

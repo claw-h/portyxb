@@ -87,7 +87,7 @@ export function isReady(): boolean {
 // These two aren't owned by any single scene module, so they live here.
 
 if (typeof document !== 'undefined') {
-	document.fonts.ready.then(() => markReady('fonts'));
+	Promise.race([document.fonts.ready, new Promise(r => setTimeout(r, 2500))]).then(() => markReady('fonts'));
 }
 
 // A modest floor under the preload duration. The CRT boot-up animation in
