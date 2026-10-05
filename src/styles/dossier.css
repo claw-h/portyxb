@@ -23,6 +23,59 @@
     display: none;
 }
 
+@media (max-width: 768px), (pointer: coarse) {
+    .dossier-zone {
+        height: 100dvh !important;
+        position: fixed !important;
+        inset: 0 !important;
+        margin: 0 !important;
+        z-index: 99999 !important;
+        background: #020508 !important;
+        overflow: hidden !important;
+        display: block !important;
+    }
+
+    .dossier-sticky,
+    .dossier-wrapper {
+        height: 100% !important;
+    }
+
+    #mobile-gate {
+        display: flex !important;
+        position: absolute;
+        inset: 0;
+        z-index: 5;
+    }
+
+    .canvas-placeholder,
+    #dossier-canvas {
+        display: none !important;
+    }
+
+    .dom-overlay {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 10 !important;
+    }
+
+    .archive-btn {
+        position: fixed !important;
+        right: 1.5rem !important;
+        bottom: max(1.5rem, env(safe-area-inset-bottom, 0px)) !important;
+        width: min(220px, calc(50vw - 2rem)) !important;
+        z-index: 100 !important;
+    }
+
+    .id-card {
+        position: fixed !important;
+        left: 1.5rem !important;
+        right: auto !important;
+        bottom: max(1.5rem, env(safe-area-inset-bottom, 0px)) !important;
+        width: min(220px, calc(50vw - 2rem)) !important;
+        z-index: 101 !important;
+    }
+}
+
 html.is-mobile-gate .hero-sequence, 
 html.is-mobile-gate .dream-zone, 
 html.is-mobile-gate .hero-progress, 
