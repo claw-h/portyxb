@@ -34,6 +34,15 @@ html.is-mobile-gate #heart-ui-layer {
     display: none !important;
 }
 
+html.is-mobile-gate {
+    height: auto !important;
+    overflow: auto !important;
+}
+
+html.is-mobile-gate body {
+    overflow: auto !important;
+}
+
 /* Force dossier to be the only thing on screen */
 html.is-mobile-gate .dossier-zone {
     height: 100vh !important;  /* fallback for browsers without dvh */
