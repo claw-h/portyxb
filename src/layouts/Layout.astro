@@ -2,6 +2,7 @@
 import '@fontsource/architects-daughter';
 import '@fontsource-variable/space-grotesk';
 import '@fontsource-variable/unbounded';
+import Analytics from '@vercel/analytics/astro';
 ---
 <!doctype html>
 <html lang="en">
@@ -14,6 +15,7 @@ import '@fontsource-variable/unbounded';
 			name="description"
 			content="A scroll-driven creative direction portfolio built with Astro, Three.js, and canvas."
 		/>
+		<Analytics />
 		<title></title>
 		<script is:inline>
 			const isMobileDevice = window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
