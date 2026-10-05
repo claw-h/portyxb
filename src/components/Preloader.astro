@@ -417,6 +417,11 @@
 			percentText.textContent = '100%';
 			statusText.textContent = 'NEURAL CORES SECURE';
 
+			if (window.matchMedia('(max-width: 768px), (pointer: coarse)').matches) {
+				shell.style.display = 'none';
+				return;
+			}
+
 			setTimeout(() => {
 				// Fire the CRT turn-off animation
 				crtDisplay.classList.add('crt-turn-off');

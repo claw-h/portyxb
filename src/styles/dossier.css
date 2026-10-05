@@ -88,6 +88,8 @@ html.is-mobile-gate #mobile-gate .gate-content {
 
 /* Bring the DOM UI (Buttons) to the front so they are clickable */
 html.is-mobile-gate .dom-overlay {
+    position: fixed !important;
+    inset: 0 !important;
     z-index: 10 !important;
 }
 
@@ -100,27 +102,30 @@ html.is-mobile-gate .dossier-wrapper {
 
 /* Base state for smaller phones (< 504px) */
 html.is-mobile-gate .archive-btn {
+    position: fixed !important;
     right: 1.5rem !important;
     bottom: var(--gate-btn-bottom) !important;
-    width: calc(50vw - 2rem) !important;
+    width: min(220px, calc(50vw - 2rem)) !important;
+    z-index: 100 !important;
 }
 
 html.is-mobile-gate .id-card {
+    position: fixed !important;
     left: 1.5rem !important;
     right: auto !important;
     bottom: var(--gate-btn-bottom) !important;
-    width: calc(50vw - 2rem) !important;
+    width: min(220px, calc(50vw - 2rem)) !important;
+    transform: none;
+    z-index: 101 !important;
 }
 
 /* Fixed state for larger phones & tablets (>= 504px) */
 @media (min-width: 504px) {
     html.is-mobile-gate .archive-btn {
-        right: calc(50% - 220px - 0.5rem) !important;
-        width: 220px !important;
+        right: max(1.5rem, calc(50% - 220px - 0.5rem)) !important;
     }
     html.is-mobile-gate .id-card {
-        left: calc(50% - 220px - 0.5rem) !important;
-        width: 220px !important;
+        left: max(1.5rem, calc(50% - 220px - 0.5rem)) !important;
     }
 }
 html.is-mobile-gate .id-card {
@@ -128,6 +133,7 @@ html.is-mobile-gate .id-card {
         left 0.6s cubic-bezier(0.16, 1, 0.3, 1),
         width 0.6s cubic-bezier(0.16, 1, 0.3, 1),
         height 0.6s cubic-bezier(0.16, 1, 0.3, 1),
+        transform 0.6s cubic-bezier(0.16, 1, 0.3, 1),
         border-radius 0.6s ease,
         border-color 0.3s ease !important;
 }
@@ -135,7 +141,9 @@ html.is-mobile-gate .id-card {
 html.is-mobile-gate .id-card.is-open {
     --gate-card-w: min(calc(100% - 3rem), 520px);
     width: var(--gate-card-w) !important;
-    left: calc(50% - var(--gate-card-w) / 2) !important;
+    left: 50% !important;
+    right: auto !important;
+    transform: translateX(-50%);
 }
 
 /* Make Archive Modal fit mobile screen + frost whatever is behind it.

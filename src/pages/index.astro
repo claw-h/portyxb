@@ -114,7 +114,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 		<script>
 			document.addEventListener('keydown', (e) => {
 				if (e.key.toLowerCase() === 'n' && !e.ctrlKey && !e.metaKey) {
-					const nav = document.querySelector('.phase-nav');
+					const nav = document.querySelector('.phase-nav') as HTMLElement | null;
 					if (nav) nav.style.display = nav.style.display === 'none' ? 'flex' : 'none';
 				}
 			});
@@ -188,16 +188,16 @@ import DossierIndex from '../components/DossierIndex.astro';
 	// Must match the @media query in styles/dossier.css
 	const mobileGateMQ = window.matchMedia('(max-width: 768px), (pointer: coarse)');
 	const isMobileGate = mobileGateMQ.matches;
-	if (isMobileGate) {
+	const applyMobileGateLayout = () => {
+		if (!isMobileGate) return;
 		document.documentElement.classList.add('is-mobile-gate');
-		
-		// FAILSAFE: If Vite's CSS HMR is stuck serving an old stylesheet, this JS will forcefully apply the layout changes.
+
 		const hideSelectors = '.hero-sequence, .dream-zone, .hero-progress, .hero-border-svg, .lens-cursor, .scroll-prompt, .phase-nav, #heart-ui-layer';
 		document.querySelectorAll(hideSelectors).forEach(el => {
-			if (el) el.style.setProperty('display', 'none', 'important');
+			(el as HTMLElement).style.setProperty('display', 'none', 'important');
 		});
-		
-		const dossierZone = document.querySelector('.dossier-zone');
+
+		const dossierZone = document.querySelector('.dossier-zone') as HTMLElement | null;
 		if (dossierZone) {
 			dossierZone.style.setProperty('height', '100dvh', 'important');
 			dossierZone.style.setProperty('position', 'fixed', 'important');
@@ -209,17 +209,18 @@ import DossierIndex from '../components/DossierIndex.astro';
 			dossierZone.style.setProperty('display', 'block', 'important');
 		}
 
-		const dossierSticky = document.querySelector('.dossier-sticky');
-		if (dossierSticky) dossierSticky.style.setProperty('height', '100%', 'important');
-		
-		const dossierWrapper = document.querySelector('.dossier-wrapper');
-		if (dossierWrapper) dossierWrapper.style.setProperty('height', '100%', 'important');
+		(document.querySelector('.dossier-sticky') as HTMLElement | null)?.style.setProperty('height', '100%', 'important');
+		(document.querySelector('.dossier-wrapper') as HTMLElement | null)?.style.setProperty('height', '100%', 'important');
+		document.getElementById('mobile-gate')?.style.setProperty('display', 'flex', 'important');
+		document.getElementById('dossier-canvas')?.style.setProperty('display', 'none', 'important');
+	};
 
-		const mobileGate = document.getElementById('mobile-gate');
-		if (mobileGate) mobileGate.style.setProperty('display', 'flex', 'important');
-
-		const dossierCanvas = document.getElementById('dossier-canvas');
-		if (dossierCanvas) dossierCanvas.style.setProperty('display', 'none', 'important');
+	if (isMobileGate) {
+		applyMobileGateLayout();
+		window.addEventListener('pageshow', applyMobileGateLayout);
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible') applyMobileGateLayout();
+		});
 	}
 
 	// Scenes are either fully booted (desktop) or never booted (mobile) at load time.
@@ -264,8 +265,8 @@ import DossierIndex from '../components/DossierIndex.astro';
 		try {
 			const mod = await import('../controllers/DossierScene');
 			dossierScene = await mod.setupDossierScene();
-			setDossierScrollVelocity = mod.setDossierScrollVelocity;
-			setDossierScrollProgress = mod.setDossierScrollProgress;
+			setDossierScrollVelocity = mod.setDossierScrollVelocity ?? null;
+			setDossierScrollProgress = mod.setDossierScrollProgress ?? null;
 			const originalDestroy = (window as any).destroy || function() {};
 			(window as any).destroy = () => {
 				originalDestroy();
