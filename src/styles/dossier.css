@@ -123,6 +123,7 @@ html.is-mobile-gate .id-card {
         width: 220px !important;
     }
 }
+html.is-mobile-gate .id-card {
     transition:
         left 0.6s cubic-bezier(0.16, 1, 0.3, 1),
         width 0.6s cubic-bezier(0.16, 1, 0.3, 1),
