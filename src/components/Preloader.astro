@@ -364,10 +364,6 @@
 		const crtDisplay = document.querySelector('[data-crt]') as HTMLElement;
 
 		if (!progressBar || !percentText || !statusText || !shell || !crtDisplay) return;
-		if (window.matchMedia('(max-width: 768px), (pointer: coarse)').matches) {
-			shell.style.display = 'none';
-			return;
-		}
 
 		let displayProgress = 0;
 		let targetProgress = 0;

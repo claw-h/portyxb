@@ -154,15 +154,11 @@ import DossierIndex from '../components/DossierIndex.astro';
 	// preloader lifts. Removed once utils/loadState reports real readiness.
 	document.documentElement.classList.add('is-site-loading');
 
-	const mobileGateMQ = window.matchMedia('(max-width: 768px), (pointer: coarse)');
-	const isMobileGate = mobileGateMQ.matches;
-	if (isMobileGate) document.documentElement.classList.add('is-mobile-gate');
-
 	// Boot all systems. setupDreamCanvas is synchronous — it kicks off its
 	// own async GLTF load internally and reports completion via
 	// utils/loadState, but returns its controller immediately.
-	const cursor     = isMobileGate ? null : setupCursor();
-	const heroCopy   = isMobileGate ? null : setupHeroCopyReveal();
+	const cursor     = setupCursor();
+	const heroCopy   = setupHeroCopyReveal();
 	let active3DScene: LoopController | null = null;
 	let isInitializing = false; // Add this guard flag
 
@@ -189,6 +185,9 @@ import DossierIndex from '../components/DossierIndex.astro';
 		zones.forEach(zone => observer.observe(zone));
 	});
 
+	// Must match the @media query in styles/dossier.css
+	const mobileGateMQ = window.matchMedia('(max-width: 768px), (pointer: coarse)');
+	const isMobileGate = mobileGateMQ.matches;
 	const applyMobileGateLayout = () => {
 		if (!isMobileGate) return;
 		document.documentElement.classList.add('is-mobile-gate');
@@ -232,11 +231,14 @@ import DossierIndex from '../components/DossierIndex.astro';
 	mobileGateMQ.addEventListener('change', (e) => {
 		if (e.matches === isMobileGate) {
 			window.clearTimeout(gateReloadTimer); // resized back before settling
+			document.documentElement.style.visibility = '';
 			return;
 		}
+		document.documentElement.style.visibility = 'hidden'; // hide artefacts immediately
 		window.clearTimeout(gateReloadTimer);
 		gateReloadTimer = window.setTimeout(() => {
 			if (mobileGateMQ.matches !== isMobileGate) location.reload();
+			else document.documentElement.style.visibility = '';
 		}, 250);
 	});
 
@@ -383,7 +385,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 		}
 		cursor?.destroy();
 		heroCopy?.();
-		discreteScrollController.destroy();
+        discreteScrollController.destroy();
         lenis.destroy(); // <-- 5. Clean up Lenis on page swap
 	};
 
