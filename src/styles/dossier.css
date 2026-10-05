@@ -25,26 +25,30 @@
 
 @media (max-width: 768px), (pointer: coarse) {
     .dossier-zone {
-        height: 100dvh !important;
-        position: fixed !important;
-        inset: 0 !important;
+        height: 0 !important;
+        position: static !important;
         margin: 0 !important;
-        z-index: 99999 !important;
-        background: #020508 !important;
-        overflow: hidden !important;
+        overflow: visible !important;
         display: block !important;
     }
 
-    .dossier-sticky,
-    .dossier-wrapper {
+    .dossier-sticky {
+        position: static !important;
         height: 100% !important;
+        overflow: visible !important;
+    }
+
+    .dossier-wrapper {
+        height: 100dvh !important;
+        overflow: visible !important;
     }
 
     #mobile-gate {
         display: flex !important;
-        position: absolute;
+        position: fixed !important;
         inset: 0;
-        z-index: 5;
+        z-index: 2147483647 !important;
+        background: #020508;
     }
 
     .canvas-placeholder,
@@ -104,12 +108,9 @@ html.is-mobile-gate .preloader-shell {
 html.is-mobile-gate .dossier-zone {
     height: 100vh !important;  /* fallback for browsers without dvh */
     height: 100dvh !important; /* the actually-visible viewport height */
-    position: fixed !important;
-    inset: 0 !important;
+    position: static !important;
     margin: 0 !important; /* desktop uses margin-top:-100vh to overlap Dream; that shifts fixed elements off-screen */
-    z-index: 99999 !important;
-    background: #020508 !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     display: block !important;
 }
 
@@ -127,12 +128,17 @@ html.is-mobile-gate .dossier-wrapper {
     height: 100% !important;
 }
 
+html.is-mobile-gate .dossier-sticky {
+    position: static !important;
+    overflow: visible !important;
+}
+
 /* Show and style the Mobile Gate */
 html.is-mobile-gate #mobile-gate {
     display: flex !important;
-    position: absolute;
+    position: fixed !important;
     inset: 0;
-    z-index: 5;
+    z-index: 2147483647 !important;
     background: 
         linear-gradient(rgba(77, 162, 255, 0.035) 1px, transparent 1px),
         linear-gradient(90deg, rgba(77, 162, 255, 0.035) 1px, transparent 1px),
