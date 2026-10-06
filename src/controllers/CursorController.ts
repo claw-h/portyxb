@@ -11,6 +11,8 @@ export function setupCursor(): CursorController | null {
 
 	const lensCursor = document.querySelector<HTMLElement>('.lens-cursor');
 	if (!lensCursor) return null;
+	const heroSection = document.querySelector<HTMLElement>('[data-hero]');
+	let isHeroVisible = false;
 
 	// Initialize straight to dead center of the screen
 	let mouseX = window.innerWidth / 2;
@@ -116,7 +118,7 @@ export function setupCursor(): CursorController | null {
 
 	const unsubscribeHover = onHoverTargetChange((target) => {
 		isHovering = target !== null;
-		isHeartTarget = target === 'heart';
+		isHeartTarget = target === 'heart' && isHeroVisible;
 		if (isHovering) {
 			playHoverTick();
 		}
@@ -124,6 +126,20 @@ export function setupCursor(): CursorController | null {
 		lensCursor!.classList.toggle('is-reticle', isHovering && !isHeartTarget);
 		lensCursor!.classList.toggle('is-heart-reticle', isHeartTarget);
 	});
+
+	const heroVisibilityObserver = heroSection
+		? new IntersectionObserver(([entry]) => {
+			isHeroVisible = entry.isIntersecting;
+			if (!isHeroVisible) {
+				isHeartTarget = false;
+				lensCursor!.classList.remove('is-heart-reticle');
+				if (!isHovering || !isHeartTarget) {
+					lensCursor!.classList.remove('is-reticle');
+				}
+			}
+		}, { threshold: 0.01 })
+		: null;
+	heroVisibilityObserver?.observe(heroSection);
 
 	window.addEventListener('mousemove', onMouseMove);
 	document.addEventListener('visibilitychange', onVisibilityChange);
@@ -135,6 +151,7 @@ export function setupCursor(): CursorController | null {
 			window.removeEventListener('mousemove', onMouseMove);
 			document.removeEventListener('visibilitychange', onVisibilityChange);
 			unsubscribeHover();
+			heroVisibilityObserver?.disconnect();
 		}
 	};
 }

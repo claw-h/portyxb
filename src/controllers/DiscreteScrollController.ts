@@ -59,7 +59,14 @@ export class DiscreteScrollController {
 
     private onResize = () => {
         this.updateSnapPoints();
+        this.syncToScrollPosition();
+    }
+
+    public syncToScrollPosition() {
+        this.updateSnapPoints();
         this.currentIndex = this.getClosestIndex(window.scrollY);
+        this.wheelAccumulator = 0;
+        this.lastWheelEventTime = 0;
         setArchiveMelodyActive(this.currentIndex >= 9);
     }
 
@@ -76,6 +83,11 @@ export class DiscreteScrollController {
         if (Math.abs(e.deltaY) < 2) return;
 
         const now = Date.now();
+
+        // Reloads and native scroll restoration can move the document without
+        // updating the previously selected snap index. Rebase before deciding
+        // which snap point the gesture should target.
+        this.currentIndex = this.getClosestIndex(window.scrollY);
         
         // Hard lockout to prevent jitter, skipped scenes, and "snaps all at once"
         if (now - this.lastSnapTime < 800) {

@@ -716,7 +716,40 @@ export function setupHeartScene(): LoopController | null {
     if (!uiLayer) {
         console.warn('Telemetry UI layer (#heart-ui-layer) not found in DOM.');
     }
+    let isSectionVisible = false;
     const panelManager = new PanelManager(uiLayer as HTMLElement);
+    const heartVisibilityObserver = new IntersectionObserver(
+        ([entry]) => {
+            isSectionVisible = entry.isIntersecting;
+            if (uiLayer) {
+                uiLayer.style.visibility = 'hidden';
+            }
+            if (!isSectionVisible) {
+                setHoverTarget('heart', false);
+                uiLayer?.querySelectorAll<HTMLElement>('.panel-assembly').forEach((panel) => {
+                    panel.style.opacity = '0';
+                    panel.style.pointerEvents = 'none';
+                });
+            }
+            if (isSectionVisible) {
+                calculateTargetProgress();
+                currentProgress = targetProgress;
+                prevProgress = targetProgress;
+                applyDOMScrollState(evaluateScrollState(currentProgress));
+                // Let the paused loop apply panel opacity for the current
+                // progress before exposing the shared UI layer.
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        if (isSectionVisible && uiLayer) {
+                            uiLayer.style.visibility = 'visible';
+                        }
+                    });
+                });
+            }
+        },
+        { threshold: 0.01 },
+    );
+    heartVisibilityObserver.observe(section);
 
     const panelConfigs: PanelConfig[] = [
         {
@@ -1209,7 +1242,18 @@ export function setupHeartScene(): LoopController | null {
     }
 
 	function calculateTargetProgress(): void {
-		targetProgress = Math.max(0, (window.scrollY - cachedSectionTop) / Math.max(cachedScrollableRange, 1));
+		targetProgress = clamp(
+			(window.scrollY - cachedSectionTop) / Math.max(cachedScrollableRange, 1),
+			0,
+			1,
+		);
+	}
+
+	function handleSceneScroll(): void {
+		calculateTargetProgress();
+		if (!isSectionVisible) {
+			applyDOMScrollState(evaluateScrollState(targetProgress));
+		}
 	}
 
     renderer.info.autoReset = false;
@@ -1570,24 +1614,31 @@ export function setupHeartScene(): LoopController | null {
 	// Pass the actual sticky canvas to the observer so it strictly pauses when the canvas leaves the viewport
 	const controller = createLoopController(canvas, render);
 
-	window.addEventListener('scroll', calculateTargetProgress, { passive: true });
+	window.addEventListener('scroll', handleSceneScroll, { passive: true });
 	window.addEventListener('resize', handleResize);
 	
 	// Defer the initial layout read so it doesn't block FCP
 	requestAnimationFrame(() => {
 		handleResize();
+		// A reload can restore the document at an arbitrary scroll position.
+		// Start the timeline there instead of replaying it from progress zero.
+		currentProgress = targetProgress;
+		prevProgress = targetProgress;
+		applyDOMScrollState(evaluateScrollState(currentProgress));
 	});
 
 	return {
 		...controller,
 		destroy: () => {
 			controller.destroy();
-			window.removeEventListener('scroll', calculateTargetProgress);
+			window.removeEventListener('scroll', handleSceneScroll);
 			window.removeEventListener('resize', handleResize);
             window.removeEventListener('mousemove', handleMouseMove); 
 			setHoverTarget('heart', false);
 
 			panelManager.destroy();
+			heartVisibilityObserver.disconnect();
+			if (uiLayer) uiLayer.style.visibility = '';
 
 			scene.traverse((obj) => {
 				if (obj instanceof Mesh || obj instanceof LineSegments || obj instanceof Points) {

@@ -145,7 +145,45 @@ import DossierIndex from '../components/DossierIndex.astro';
 	import { DiscreteScrollController } from '../controllers/DiscreteScrollController';
 	import { toggleMute, initMute, isMuted, pauseAudio, resumeAudio } from '../utils/audio';
 	import { setHoverTarget } from '../utils/hoverTargets';
-	
+
+	const SCROLL_CONTEXT_KEY = 'portyxb:scroll-context';
+	history.scrollRestoration = 'manual';
+
+	// Native browser restoration is not synchronized with Lenis or the
+	// scroll-driven scenes. Restore the last position before those controllers
+	// calculate their initial progress, so a reload never replays scene 1.
+	const savedScrollContext = sessionStorage.getItem(SCROLL_CONTEXT_KEY);
+	const savedScrollY = savedScrollContext ? Number(savedScrollContext) : 0;
+	const initialScrollY = Number.isFinite(savedScrollY) && savedScrollY > 0
+		? savedScrollY
+		: window.scrollY;
+	let scrollContextReady = false;
+	let isUnloading = false;
+
+	const restoreScrollContext = (scrollY: number): void => {
+		if (!Number.isFinite(scrollY) || scrollY <= 0) return;
+		window.scrollTo({ top: scrollY, left: 0, behavior: 'auto' });
+	};
+
+	const restoreWhenLayoutReady = (scrollY: number, onRestored: () => void): void => {
+		let attempts = 0;
+		const attempt = () => {
+			const maxScrollY = Math.max(
+				document.documentElement.scrollHeight - window.innerHeight,
+				document.body.scrollHeight - window.innerHeight,
+			);
+
+			if (maxScrollY >= scrollY || attempts++ >= 600) {
+				restoreScrollContext(Math.min(scrollY, maxScrollY));
+				onRestored();
+				return;
+			}
+
+			requestAnimationFrame(attempt);
+		};
+		attempt();
+	};
+
 	let setDreamScrollVelocity: ((v: number) => void) | null = null;
 	let setDreamScrollProgress: ((p: number) => void) | null = null;
 	let setDossierScrollVelocity: ((v: number) => void) | null = null;
@@ -357,6 +395,15 @@ import DossierIndex from '../components/DossierIndex.astro';
 		setDreamScrollProgress?.(e.progress); 
 		setDossierScrollVelocity?.(e.velocity);
 		setDossierScrollProgress?.(e.progress);
+		if (scrollContextReady && !isUnloading) {
+			sessionStorage.setItem(SCROLL_CONTEXT_KEY, String(Math.round(e.scroll)));
+		}
+	});
+
+	window.addEventListener('pagehide', () => {
+		// Browsers may move the document before firing pagehide. Do not
+		// replace a valid saved position with that teardown position.
+		isUnloading = true;
 	});
 
     // 4. Mount Lenis to the browser's requestAnimationFrame
@@ -374,7 +421,32 @@ import DossierIndex from '../components/DossierIndex.astro';
 	// do we unlock scroll and let the site actually be interacted with.
 	onReady(() => {
 		document.documentElement.classList.remove('is-site-loading');
-		lenis.start();
+
+		const initDeferredScenes = () => {
+			if (!dreamInit) {
+				dreamInit = true;
+				initDreamScene();
+			}
+			if (!dossierInit) {
+				dossierInit = true;
+				initDossierScene();
+			}
+		};
+
+		// Start deferred scene setup before measuring the restore target. Some
+		// scene mounts affect layout, so restoring against the hero-only height
+		// can clamp the position and desynchronize the first wheel event.
+		initDeferredScenes();
+
+		// Wait until deferred scenes and content establish enough document
+		// height for the saved offset. Restoring earlier gets clamped to zero.
+		restoreWhenLayoutReady(initialScrollY, () => {
+			requestAnimationFrame(() => {
+				discreteScrollController.syncToScrollPosition();
+				lenis.start();
+				scrollContextReady = true;
+			});
+		});
 
 		// Check if it's the user's first visit
 		const hasSeenAdvisory = localStorage.getItem('seen-advisory');
@@ -401,22 +473,6 @@ import DossierIndex from '../components/DossierIndex.astro';
 			}
 		}
 
-		const initDeferredScenes = () => {
-			if (!dreamInit) {
-				dreamInit = true;
-				initDreamScene();
-			}
-			if (!dossierInit) {
-				dossierInit = true;
-				initDossierScene();
-			}
-		};
-
-		if ('requestIdleCallback' in window) {
-			requestIdleCallback(initDeferredScenes);
-		} else {
-			setTimeout(initDeferredScenes, 500);
-		}
 	});
 
 	// Unified cleanup for view transitions / HMR
