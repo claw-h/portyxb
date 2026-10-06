@@ -46,7 +46,7 @@
             </div>
         </div>
 
-        <button id="archive-toggle" class="archive-btn" aria-label="Open Archive">ARCHIVE</button>
+        <button id="archive-toggle" class="archive-btn" aria-label="Open Archive" data-no-matrix>ARCHIVE</button>
 
 
         <div id="archive-modal" class="archive-modal hidden" data-lenis-prevent="true">
@@ -81,6 +81,7 @@
                                         <div class="project-details">
                                             <div class="project-details-inner">
                                                 <div class="project-meta"><span>Domain:</span> Terminal Tooling // Core Nav</div>
+                                                <div class="project-tag">Self-initiated R&D</div>
                                                 <p class="project-desc">A blazingly fast fuzzy navigation utility designed to strip away the bloated overhead of traditional Zsh plugins. Engineered for sub-millisecond directory traversal and streamlined terminal workflows.</p>
                                                 <a href="https://github.com/claw-h/fuzzy-nav" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
@@ -97,6 +98,7 @@
                                         <div class="project-details">
                                             <div class="project-details-inner">
                                                 <div class="project-meta"><span>Domain:</span> Secure Platform Architecture</div>
+                                                <div class="project-tag">Client project</div>
                                                 <p class="project-desc">A highly secure, full-stack platform architecture built on Astro. Features a hardened, stateless OTP authentication pipeline, zero-trust session management, and a strictly typed Prisma ORM layer interacting with a PostgreSQL core. Engineered with strict CI/CD quality gates and production-ready security protocols.</p>
                                                 <a href="https://github.com/claw-h/marketplace" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
@@ -113,6 +115,7 @@
                                         <div class="project-details">
                                             <div class="project-details-inner">
                                                 <div class="project-meta"><span>Domain:</span> Education Tech</div>
+                                                <div class="project-tag">Client project</div>
                                                 <p class="project-desc">Educational Management Interface. Streamlining school operations, resource management, and grading systems.</p>
                                                 <a href="https://github.com/claw-h/schoolos" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
@@ -123,13 +126,22 @@
                                         <button class="project-header" aria-expanded="false">
                                             <div class="col-year">2025</div>
                                             <div class="col-title">loveOS (v2)</div>
-                                            <div class="col-tech">React, TSX, Framer Motion</div>
+                                            <div class="col-tech">
+                                                <span>React, TSX, Framer Motion</span>
+                                                <span class="featured-pill">FEATURED</span>
+                                            </div>
                                             <div class="col-icon">+</div>
                                         </button>
                                         <div class="project-details">
                                             <div class="project-details-inner">
                                                 <div class="project-meta"><span>Domain:</span> Realtime Sync App</div>
-                                                <p class="project-desc">Custom webapp with a two-way user sync using SupaBase Realtime (across components). Uses Framer Motion for transitions, animations, lighting and events. The base components are built in React, using TSX.</p>
+                                                <div class="project-tag">Self-initiated R&D</div>
+                                                <div class="project-desc">
+                                                    <p><span class="desc-heading">Problem.</span> A memory archive as a list or grid hides what connects things. I wanted to see the shape of a shared history, not scroll it.</p>
+                                                    <p><span class="desc-heading">Decision.</span> Every tagged category becomes a constellation. Clusters sit on a golden-angle spiral so categories spread evenly across a sphere, and memories scatter inside each one as an elongated cloud. A minimum spanning tree draws the line figure, plus a couple of short cross-links so it reads like a star chart instead of a tree. Color tracks decay: gold for vivid memories, blue as they cool, ember as they fade. Positions are stable per memory, so a memory always lives in the same place.</p>
+                                                    <p><span class="desc-heading">Build.</span> Custom 3D projection and depth sorting on Canvas 2D, no engine. New memories arrive in real time as a shooting star and a new node.</p>
+                                                    <p><span class="desc-heading">Result.</span> 45+ fps at 3000+ nodes. Because the engine only needs a tag and a weight per point, the same system can map any categorized dataset.</p>
+                                                </div>
                                                 <a href="https://github.com/claw-h/loveOS" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
                                         </div>
@@ -145,6 +157,7 @@
                                         <div class="project-details">
                                             <div class="project-details-inner">
                                                 <div class="project-meta"><span>Domain:</span> Cryptography / Puzzle</div>
+                                                <div class="project-tag">Self-initiated R&D</div>
                                                 <p class="project-desc">Personal ARG / cryptography puzzle engine designed for specialized interactive storytelling experiences.</p>
                                                 <a href="https://github.com/claw-h/night" target="_blank" class="project-link" data-lens-target="archive">View Repository ↗</a>
                                             </div>
@@ -161,7 +174,9 @@
                                         <div class="project-details">
                                             <div class="project-details-inner">
                                                 <div class="project-meta"><span>Domain:</span> Performance / WebGL</div>
+                                                <div class="project-tag">Self-initiated R&D</div>
                                                 <p class="project-desc">it speaks for itself</p>
+                                                <div class="project-spec">WebGL · custom audio engine · 25+ fps on a 5-yr-old i3 · Lighthouse 93</div>
                                                 <a href="#" class="project-link" data-lens-target="archive">View Source ↗</a>
                                             </div>
                                         </div>
@@ -902,12 +917,33 @@
         transition: color 0.3s;
     }
     
+    .featured-pill {
+        display: inline-block;
+        margin-left: 0.5rem;
+        padding: 0.15rem 0.35rem;
+        background: rgba(255, 170, 0, 0.15);
+        border: 1px solid rgba(255, 170, 0, 0.4);
+        border-radius: 3px;
+        color: #ffaa00;
+        font-size: 0.55rem;
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+        letter-spacing: 0.05em;
+        text-shadow: none;
+    }
+    
     .project-item.is-expanded .col-title {
         color: #ffaa00; /* Amber active text */
         text-shadow: 0 0 8px rgba(255,170,0,0.4);
     }
     
-    .col-tech { width: 55%; color: rgba(255,255,255,0.3); }
+    .col-tech { 
+        width: 55%; 
+        color: rgba(255,255,255,0.3); 
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-right: 1rem;
+    }
     .col-icon {
         width: 5%;
         display: inline-flex;
@@ -988,6 +1024,30 @@
         text-shadow: 0 0 6px rgba(92,133,255,0.4);
     }
     
+    .project-tag {
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+        font-size: 0.65rem;
+        color: #4da2ff;
+        background: rgba(77, 162, 255, 0.1);
+        border: 1px solid rgba(77, 162, 255, 0.25);
+        padding: 0.2rem 0.4rem;
+        border-radius: 3px;
+        display: inline-block;
+        margin-bottom: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .project-spec {
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+        font-size: 0.7rem;
+        color: #5c85ff;
+        margin-top: -0.5rem;
+        margin-bottom: 1.5rem;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+    }
+    
     .project-meta span {
         color: #3b5a99;
     }
@@ -999,6 +1059,22 @@
         margin: 0 0 1.5rem 0;
         max-width: 800px;
         letter-spacing: -0.2px;
+    }
+    
+    .project-desc p {
+        margin: 0 0 1rem 0;
+    }
+    .project-desc p:last-child {
+        margin-bottom: 0;
+    }
+    .desc-heading {
+        color: #ffaa00;
+        font-weight: 600;
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        margin-right: 0.3rem;
     }
 
     /* Mechanical Tactical Button for Links */

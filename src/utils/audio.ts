@@ -33,15 +33,48 @@ export function getContext() {
 	return audioCtx;
 }
 
-export function setVolume(v: number) {
-	if (masterGain) {
-		masterGain.gain.value = Math.max(0, Math.min(1, v));
-	}
+let isMutedState = false;
+let hasUnlockedAudio = false;
+
+export function initMute() {
+    if (typeof window === 'undefined') return;
+    isMutedState = localStorage.getItem('animus-muted') === 'true';
+}
+
+export function toggleMute() {
+    if (typeof window === 'undefined') return false;
+    isMutedState = !isMutedState;
+    localStorage.setItem('animus-muted', isMutedState ? 'true' : 'false');
+    if (masterGain) {
+        masterGain.gain.value = isMutedState ? 0 : 0.4;
+    }
+    return isMutedState;
+}
+
+export function isMuted() {
+    return isMutedState;
+}
+
+export function pauseAudio() {
+    if (audioCtx && audioCtx.state === 'running') {
+        audioCtx.suspend();
+    }
+}
+
+export function resumeAudio() {
+    if (audioCtx && audioCtx.state === 'suspended' && !isMutedState && hasUnlockedAudio) {
+        audioCtx.resume();
+    }
 }
 
 function shouldPlay() {
 	if (typeof window === 'undefined') return false;
 	if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+    if (isMutedState) return false;
+    
+    if (audioCtx && audioCtx.state === 'running') {
+        hasUnlockedAudio = true;
+    }
 	return true;
 }
 

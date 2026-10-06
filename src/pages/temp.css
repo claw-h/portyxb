@@ -1,0 +1,14 @@
+    .project-desc p {
+        margin: 0 0 1rem 0;
+    }
+    .project-desc p:last-child {
+        margin-bottom: 0;
+    }
+    .desc-heading {
+        color: #ffaa00; /* Amber to match active title */
+        font-weight: 600;
+        font-family: 'IBM Plex Mono', 'SFMono-Regular', monospace;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+    }

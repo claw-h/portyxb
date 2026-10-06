@@ -10,6 +10,7 @@ import DossierIndex from '../components/DossierIndex.astro';
 
 <Layout>
 	<Preloader />
+	<button id="global-mute-btn" class="global-mute-btn" aria-label="Toggle Audio">[AUDIO: ON]</button>
 
 	<div id="heart-ui-layer"></div>
 
@@ -142,6 +143,8 @@ import DossierIndex from '../components/DossierIndex.astro';
 	import type { LoopController } from '../utils/canvas';
 	import Lenis from 'lenis';
 	import { DiscreteScrollController } from '../controllers/DiscreteScrollController';
+	import { toggleMute, initMute, isMuted, pauseAudio, resumeAudio } from '../utils/audio';
+	import { setHoverTarget } from '../utils/hoverTargets';
 	
 	let setDreamScrollVelocity: ((v: number) => void) | null = null;
 	let setDreamScrollProgress: ((p: number) => void) | null = null;
@@ -159,8 +162,41 @@ import DossierIndex from '../components/DossierIndex.astro';
 	// utils/loadState, but returns its controller immediately.
 	const cursor     = setupCursor();
 	const heroCopy   = setupHeroCopyReveal();
+	
+	initMute();
+	const muteBtn = document.getElementById('global-mute-btn');
+	if (muteBtn) {
+		const updateBtn = () => {
+			if (isMuted()) {
+				muteBtn.textContent = '[AUDIO: OFF]';
+				muteBtn.classList.add('is-muted');
+			} else {
+				muteBtn.textContent = '[AUDIO: ON]';
+				muteBtn.classList.remove('is-muted');
+			}
+		};
+		updateBtn();
+
+		muteBtn.addEventListener('click', () => {
+			toggleMute();
+			updateBtn();
+		});
+
+		muteBtn.addEventListener('mouseenter', () => setHoverTarget('mute', true));
+		muteBtn.addEventListener('mouseleave', () => setHoverTarget('mute', false));
+	}
+
+	document.addEventListener('visibilitychange', () => {
+		if (document.hidden) {
+			pauseAudio();
+		} else {
+			resumeAudio();
+		}
+	});
+
 	let active3DScene: LoopController | null = null;
 	let isInitializing = false; // Add this guard flag
+
 
 	let heartSceneInit = false;
 	let dossierInit = false;
@@ -1358,4 +1394,34 @@ import DossierIndex from '../components/DossierIndex.astro';
 		* { animation-duration: 1ms !important; scroll-behavior: auto !important; }
 		.work-row { opacity: 1; transform: none; }
 	}
+</style><style>
+.global-mute-btn {
+	position: fixed;
+	top: 1.5rem;
+	right: 1.5rem;
+	z-index: 9999;
+	font-family: 'JetBrains Mono', monospace, 'Courier New', Courier;
+	font-size: 0.72rem;
+	font-weight: 500;
+	color: rgba(143, 220, 255, 0.65);
+	text-shadow: 0 0 10px rgba(77, 162, 255, 0.3);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	background: transparent;
+	border: none;
+	cursor: none;
+	transition: color 0.2s, text-shadow 0.2s, opacity 0.2s;
+}
+.global-mute-btn:hover {
+	color: rgba(143, 220, 255, 1);
+	text-shadow: 0 0 15px rgba(77, 162, 255, 0.8);
+}
+.global-mute-btn.is-muted {
+	color: rgba(255, 100, 100, 0.65);
+	text-shadow: 0 0 10px rgba(255, 100, 100, 0.3);
+}
+.global-mute-btn.is-muted:hover {
+	color: rgba(255, 100, 100, 1);
+	text-shadow: 0 0 15px rgba(255, 100, 100, 0.8);
+}
 </style>

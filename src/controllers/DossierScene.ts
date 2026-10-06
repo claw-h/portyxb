@@ -391,16 +391,26 @@ export async function setupDossierScene() {
 
     let targetMorph = 1.0;
     let isFetching = false;
+    let isFirstLoad = true;
+    let retryCount = 0;
+    let retryTimeout: number | undefined = undefined;
     
-    const fetchNewImage = () => {
+    const fetchNewImage = (fallbackToLocal = false) => {
         if (isFetching) return;
         isFetching = true;
         targetMorph = 0.0;
         
+        if (retryTimeout !== undefined) {
+            clearTimeout(retryTimeout);
+            retryTimeout = undefined;
+        }
+        
         // Fetch full COLOR photography to fuel the realistic tint and bleed
         const img = new Image();
         img.crossOrigin = 'anonymous';
-        img.src = `https://picsum.photos/1000/750?random=${Math.random()}`;
+        img.src = (isFirstLoad || fallbackToLocal) 
+            ? '/hero.jpg' 
+            : `https://picsum.photos/1000/750?random=${Math.random()}`;
         
         img.onload = () => {
             const offscreen = document.createElement('canvas');
@@ -412,12 +422,26 @@ export async function setupDossierScene() {
             imageTexture.needsUpdate = true;
             targetMorph = 1.0;
             isFetching = false;
+            isFirstLoad = false;
+            retryCount = 0;
         };
         
         img.onerror = () => {
-            // If picsum throws a 503 or CORS error, retry immediately
             isFetching = false;
-            fetchNewImage();
+            if (isFirstLoad || fallbackToLocal) {
+                // If local image fails, there's not much we can do.
+                return;
+            }
+            
+            retryCount++;
+            if (retryCount > 3) {
+                // Fallback to local image
+                fetchNewImage(true);
+            } else {
+                // Exponential backoff
+                const delay = Math.pow(2, retryCount - 1) * 1000;
+                retryTimeout = window.setTimeout(() => fetchNewImage(), delay);
+            }
         };
     };
 
@@ -492,6 +516,10 @@ export async function setupDossierScene() {
     }) as EventListener;
     window.addEventListener('project-hover', onPreviewHover);
 
+    // Hoisted variables for per-frame allocation avoidance
+    const targetMouse = new THREE.Vector2();
+    const hitVector = new THREE.Vector3();
+
     const controller = createLoopController(zone, (time: number) => {
         const t = time * 0.001;
         
@@ -522,7 +550,9 @@ export async function setupDossierScene() {
         // Preview fade and mouse uniforms
         const fadeSpeed = (targetPreviewHover === 0.0 && lastWasNoEffects) ? 0.3 : 0.08;
         previewMat.uniforms.uHoverFade.value += (targetPreviewHover - previewMat.uniforms.uHoverFade.value) * fadeSpeed;
-        previewMat.uniforms.uMousePos.value.lerp(new THREE.Vector2(mouse.x * 0.5 + 0.5, mouse.y * 0.5 + 0.5), 0.1);
+        
+        targetMouse.set(mouse.x * 0.5 + 0.5, mouse.y * 0.5 + 0.5);
+        previewMat.uniforms.uMousePos.value.lerp(targetMouse, 0.1);
 
         masterGroup.rotation.x += (targetRotX - masterGroup.rotation.x) * 0.05;
         masterGroup.rotation.y += (targetRotY - masterGroup.rotation.y) * 0.05;
@@ -535,10 +565,10 @@ export async function setupDossierScene() {
         const worldZ = masterGroup.position.z; 
         const distToPlane = (worldZ - raycaster.ray.origin.z) / raycaster.ray.direction.z;
         if (distToPlane > 0) {
-            const hit = raycaster.ray.origin.clone().addScaledVector(raycaster.ray.direction, distToPlane);
+            hitVector.copy(raycaster.ray.origin).addScaledVector(raycaster.ray.direction, distToPlane);
             // Smoothly move the reality spotlight
-            shaderMat.uniforms.uMousePos.value.lerp(hit, 0.1);
-            bgMat.uniforms.uMousePos.value.lerp(hit, 0.1);
+            shaderMat.uniforms.uMousePos.value.lerp(hitVector, 0.1);
+            bgMat.uniforms.uMousePos.value.lerp(hitVector, 0.1);
         }
 
         renderer.render(scene, camera);
@@ -565,6 +595,9 @@ export async function setupDossierScene() {
             previewMat.dispose();
             previewPlane.geometry.dispose();
             planeGeo.dispose();
+            
+            previewCache.forEach(tex => tex.dispose());
+            previewCache.clear();
         }
     };
 }
